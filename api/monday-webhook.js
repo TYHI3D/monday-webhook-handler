@@ -1,31 +1,21 @@
 import { json } from 'micro';
 
 export default async function handler(req, res) {
-  if (req.method === 'GET') {
-    // Monday.com challenge verification
-    const { challenge } = req.query;
+  const payload = await json(req);
 
-    if (challenge) {
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'text/plain');
-      res.end(challenge);
-    } else {
-      return res.status(400).json({ error: 'Missing challenge query parameter' });
-    }
+  // Handle the challenge POST
+  if (payload.challenge) {
+    console.log('🔐 Responding to Monday challenge:', payload.challenge);
+    return res.status(200).json({ challenge: payload.challenge });
   }
 
-  if (req.method === 'POST') {
-    const payload = await json(req);
-    console.log('🔔 Monday Webhook Received:', JSON.stringify(payload, null, 2));
+  // Handle regular webhook events
+  console.log('🔔 Monday Webhook Received:', JSON.stringify(payload, null, 2));
 
-    // Handle event
-    const event = payload.event;
-    const itemId = event?.pulseId;
-    const columnId = event?.columnId;
-    const value = event?.value;
+  const event = payload.event;
+  const itemId = event?.pulseId;
+  const columnId = event?.columnId;
+  const value = event?.value;
 
-    return res.status(200).json({ message: 'OK', itemId, columnId, value });
-  }
-
-  return res.status(405).json({ error: 'Method Not Allowed' });
+  return res.status(200).json({ message: 'OK', itemId, columnId, value });
 }
