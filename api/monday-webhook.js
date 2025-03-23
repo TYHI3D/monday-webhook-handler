@@ -1,5 +1,4 @@
 import { json } from 'micro';
-import fetch from 'node-fetch';
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 const MONDAY_API_KEY = process.env.MONDAY_API_KEY; // We'll set this in Vercel later
