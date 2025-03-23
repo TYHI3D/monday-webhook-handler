@@ -3,6 +3,31 @@ import { json } from 'micro';
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 const MONDAY_API_KEY = process.env.MONDAY_API_KEY; // Set this in Vercel env variables
 
+async function fetchSubitems(parentItemId) {
+  const query = `
+    query {
+      items(ids: ${parentItemId}) {
+        subitems {
+          id
+          name
+        }
+      }
+    }
+  `;
+
+  const response = await fetch(MONDAY_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': MONDAY_API_KEY,
+    },
+    body: JSON.stringify({ query })
+  });
+
+  const data = await response.json();
+  return data?.data?.items?.[0]?.subitems || [];
+}
+
 export default async function handler(req, res) {
   const payload = await json(req);
 
@@ -25,7 +50,15 @@ export default async function handler(req, res) {
 
     console.log(`🆕 New Work Types added:`, addedValues.map(v => v.name));
 
+    const existingSubitems = await fetchSubitems(itemId);
+    const existingNames = existingSubitems.map(sub => sub.name);
+
     for (const value of addedValues) {
+      if (existingNames.includes(value.name)) {
+        console.log(`⚠️ Skipping duplicate subitem "${value.name}"`);
+        continue;
+      }
+
       const query = `
         mutation {
           create_subitem(parent_item_id: ${itemId}, item_name: "${value.name}") {
