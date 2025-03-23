@@ -3,17 +3,27 @@ import { json } from 'micro';
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 const MONDAY_API_KEY = process.env.MONDAY_API_KEY; // Set this in Vercel env variables
 
-// Map Work Types to one or more Team IDs (as arrays)
+// Define team IDs as constants
+const TEAM_PRINT_PROCESSING = 692112;
+const TEAM_OPERATIONS = 692113;
+const TEAM_FABRICATION = 1164578;
+const TEAM_QUOTING = 1196913;
+const TEAM_ART_DEPARTMENT = 1220277;
+const TEAM_DESIGN = 1220547;
+const TEAM_MOLD_DEPARTMENT = 1220552;
+const TEAM_ELECTRONICS = 1220959;
+
+// Map Work Type dropdown labels to one or more team constants
 const WORK_TYPE_TEAM_MAP = {
-  "Print Processing": [692112],
-  "Operations": [692113],
-  "Fabrication": [1164578],
-  "Quoting": [1196913],
-  "Art Department": [1220277],
-  "Design": [1220547],
-  "Mold Department": [1220552],
-  "Electronics": [1220959]
-  // Add more mappings here as needed
+  "3D Printing": [TEAM_PRINT_PROCESSING],
+  "Design": [TEAM_DESIGN],
+  "Electronics": [TEAM_ELECTRONICS],
+  "Painting & Finishing": [TEAM_ART_DEPARTMENT],
+  "Graphics / Transfers": [TEAM_ART_DEPARTMENT, TEAM_DESIGN],
+  "Molding & Casting": [TEAM_MOLD_DEPARTMENT],
+  "Rendering": [TEAM_DESIGN],
+  "Repair / Refinishing": [TEAM_ART_DEPARTMENT],
+  // Add more Work Type labels and corresponding teams as needed
 };
 
 // Set your subitem "team" column ID here
