@@ -6,7 +6,9 @@ export default async function handler(req, res) {
     const { challenge } = req.query;
 
     if (challenge) {
-      return res.status(200).send(challenge);
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/plain');
+      res.end(challenge);
     } else {
       return res.status(400).json({ error: 'Missing challenge query parameter' });
     }
