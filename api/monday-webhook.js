@@ -141,19 +141,22 @@ export default async function handler(req, res) {
           personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
         });
         
+        // This escapes the entire JSON string for embedding in the mutation
+        const escapedValue = JSON.stringify(teamValueJson);
+
         const updateQuery = `
           mutation {
             change_column_value(
               board_id: ${subitemBoardId},
               item_id: ${subitemId},
               column_id: "${TEAM_COLUMN_ID}",
-              value: "${teamValueJson}"
+              value: ${escapedValue}
             ) {
               id
             }
           }
         `;
-        
+
         console.log("📤 GraphQL Mutation:" + updateQuery);
 
         const updateResponse = await fetch(MONDAY_API_URL, {
