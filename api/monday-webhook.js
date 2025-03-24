@@ -130,17 +130,17 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
     const subitemBoardId = boardIdData?.data?.items?.[0]?.board?.id;
     console.log("🧭 Subitem board ID:", subitemBoardId);
 
-    // Assign timeline
+    // Assign timeline to subitem
     if (subitemId && deadlineText && subitemBoardId) {
       const now = new Date().toISOString().split('T')[0];
-      const timelineValue = JSON.stringify({ from: now, to: deadlineText });
+      const timelineObj = { from: now, to: deadlineText };
       const timelineMutation = `
         mutation {
           change_column_value(
             board_id: ${subitemBoardId},
             item_id: ${subitemId},
             column_id: "${TIMELINE_COLUMN_ID}",
-            value: ${JSON.stringify(timelineValue)}
+            value: ${JSON.stringify(JSON.stringify(timelineObj))}
           ) {
             id
           }
