@@ -25,6 +25,8 @@ const WORK_TYPE_TEAM_MAP = {
   "Molding & Casting": [TEAM_IDS.MOLD_DEPARTMENT],
   "Rendering": [TEAM_IDS.DESIGN],
   "Repair / Refinishing": [TEAM_IDS.ART_DEPARTMENT],
+  "Electroplating": [TEAM_IDS.OPERATIONS],
+  "Assembly & Seaming":[TEAM_IDS.PRINT_PROCESSING],
 };
 
 const TEAM_COLUMN_ID = "person"; // Column ID for the People column
