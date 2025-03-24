@@ -137,25 +137,23 @@ export default async function handler(req, res) {
         const subitemBoardId = boardIdData?.data?.items?.[0]?.board?.id;
         console.log("🧭 Subitem board ID:", subitemBoardId);
 
-        const teamValueObject = {
+        const teamValueJson = JSON.stringify({
           personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
-        };
-        const teamValueJson = JSON.stringify(teamValueObject);
-        const escapedValue = JSON.stringify(teamValueJson); // Proper escaping for GraphQL string
-        console.log("🛰️ Update Query Payload:", escapedValue);
-
+        });
+        
         const updateQuery = `
           mutation {
             change_column_value(
               board_id: ${subitemBoardId},
               item_id: ${subitemId},
               column_id: "${TEAM_COLUMN_ID}",
-              value: "${escapedValue}"
+              value: "${teamValueJson}"
             ) {
               id
             }
           }
         `;
+        
         console.log("📤 GraphQL Mutation:" + updateQuery);
 
         const updateResponse = await fetch(MONDAY_API_URL, {
