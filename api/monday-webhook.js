@@ -115,7 +115,7 @@ export default async function handler(req, res) {
       if (Array.isArray(teamIds) && teamIds.length > 0 && subitemId) {
         const teamValueJson = JSON.stringify({
           personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
-        }).replace(/\"/g, '\"');
+        }).replace(/"/g, '\"');
         const updateQuery = `
           mutation {
             change_column_value(item_id: ${subitemId}, column_id: "${TEAM_COLUMN_ID}", value: "${teamValueJson}") {
