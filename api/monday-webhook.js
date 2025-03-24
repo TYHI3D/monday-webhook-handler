@@ -137,10 +137,12 @@ export default async function handler(req, res) {
         const subitemBoardId = boardIdData?.data?.items?.[0]?.board?.id;
         console.log("🧭 Subitem board ID:", subitemBoardId);
 
-        const teamValueJson = JSON.stringify({
+        const teamValueObject = {
           personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
-        }).replace(/"/g, '\\\\"');
-        console.log("🛰️ Update Query Payload:", teamValueJson);
+        };
+        const teamValueJson = JSON.stringify(teamValueObject);
+        const escapedValue = JSON.stringify(teamValueJson); // Proper escaping for GraphQL string
+        console.log("🛰️ Update Query Payload:", escapedValue);
 
         const updateQuery = `
           mutation {
@@ -148,7 +150,7 @@ export default async function handler(req, res) {
               board_id: ${subitemBoardId},
               item_id: ${subitemId},
               column_id: "${TEAM_COLUMN_ID}",
-              value: "${teamValueJson}"
+              value: "${escapedValue}"
             ) {
               id
             }
