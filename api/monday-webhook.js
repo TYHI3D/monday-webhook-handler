@@ -1,4 +1,4 @@
-import { json } from 'micro';
+const { json } = require('micro');
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 const MONDAY_API_KEY = process.env.MONDAY_API_KEY; // Set this in Vercel env variables
@@ -139,7 +139,7 @@ export default async function handler(req, res) {
 
         const teamValueJson = JSON.stringify({
           personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
-        }).replace(/"/g, '\\"');
+        }).replace(/"/g, '\\\\"');
         console.log("🛰️ Update Query Payload:", teamValueJson);
 
         const updateQuery = `
@@ -154,7 +154,7 @@ export default async function handler(req, res) {
             }
           }
         `;
-        console.log("📤 GraphQL Mutation:\n" + updateQuery);
+        console.log("📤 GraphQL Mutation:" + updateQuery);
 
         const updateResponse = await fetch(MONDAY_API_URL, {
           method: 'POST',
@@ -168,9 +168,7 @@ export default async function handler(req, res) {
         const updateData = await updateResponse.json();
         console.log("📥 Update Response:", JSON.stringify(updateData, null, 2));
         console.log(`👥 Assigned teams [${teamIds.join(', ')}] to subitem ${subitemId}`);
-      } else {
-        console.log(`⚠️ No team assignment for "${value.name}"`);
-      }
+
       } else {
         console.log(`⚠️ No team assignment for "${value.name}"`);
       }
