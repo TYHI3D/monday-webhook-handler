@@ -57,6 +57,90 @@ async function fetchSubitems(parentItemId) {
   return data?.data?.items?.[0]?.subitems || [];
 }
 
+async function fetchWorkTypes(itemId) {
+  const query = `
+    query {
+      items(ids: ${itemId}) {
+        column_values(ids: "dropdown_mkp8c97w") {
+          value
+        }
+      }
+    }
+  `;
+  const data = await runGraphQLQuery(query);
+  const rawValue = data?.data?.items?.[0]?.column_values?.[0]?.value;
+  try {
+    const parsed = JSON.parse(rawValue);
+    return parsed?.chosenValues || [];
+  } catch {
+    return [];
+  }
+}
+
+async function createSubitemsAndAssignTeams(itemId, workTypes) {
+  const existingSubitems = await fetchSubitems(itemId);
+  const existingNames = existingSubitems.map(sub => sub.name);
+
+  for (const value of workTypes) {
+    if (existingNames.includes(value.name)) {
+      console.log(`⚠️ Skipping duplicate subitem "${value.name}"`);
+      continue;
+    }
+
+    const createQuery = `
+      mutation {
+        create_subitem(parent_item_id: ${itemId}, item_name: "${value.name}") {
+          id
+        }
+      }
+    `;
+    const createData = await runGraphQLQuery(createQuery);
+    const subitemId = createData?.data?.create_subitem?.id;
+    console.log(`✅ Subitem created: ${subitemId} for "${value.name}"`);
+
+    const teamIds = WORK_TYPE_TEAM_MAP[value.name];
+    if (!Array.isArray(teamIds) || teamIds.length === 0 || !subitemId) {
+      console.log(`⚠️ No team mapping found for "${value.name}"`);
+      continue;
+    }
+
+    const boardIdQuery = `
+      query {
+        items(ids: ${subitemId}) {
+          board {
+            id
+          }
+        }
+      }
+    `;
+    const boardIdData = await runGraphQLQuery(boardIdQuery);
+    const subitemBoardId = boardIdData?.data?.items?.[0]?.board?.id;
+    console.log("🧭 Subitem board ID:", subitemBoardId);
+
+    const teamValueJson = JSON.stringify({
+      personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
+    });
+    const escapedValue = JSON.stringify(teamValueJson);
+
+    const updateQuery = `
+      mutation {
+        change_column_value(
+          board_id: ${subitemBoardId},
+          item_id: ${subitemId},
+          column_id: "${TEAM_COLUMN_ID}",
+          value: ${escapedValue}
+        ) {
+          id
+        }
+      }
+    `;
+
+    console.log("📤 Assigning team(s):", updateQuery);
+    const updateData = await runGraphQLQuery(updateQuery);
+    console.log("📥 Update Response:", JSON.stringify(updateData, null, 2));
+  }
+}
+
 export default async function handler(req, res) {
   const payload = await json(req);
   console.log("📦 Webhook Payload:", JSON.stringify(payload, null, 2));
@@ -75,73 +159,15 @@ export default async function handler(req, res) {
     const addedValues = newValues.filter(v => !prevNames.includes(v.name));
 
     console.log("🆕 Added Work Types:", addedValues.map(v => v.name));
-
-    const existingSubitems = await fetchSubitems(itemId);
-    const existingNames = existingSubitems.map(sub => sub.name);
-
-    for (const value of addedValues) {
-      if (existingNames.includes(value.name)) {
-        console.log(`⚠️ Skipping duplicate subitem "${value.name}"`);
-        continue;
-      }
-
-      const createQuery = `
-        mutation {
-          create_subitem(parent_item_id: ${itemId}, item_name: "${value.name}") {
-            id
-          }
-        }
-      `;
-      const createData = await runGraphQLQuery(createQuery);
-      const subitemId = createData?.data?.create_subitem?.id;
-      console.log(`✅ Subitem created: ${subitemId} for "${value.name}"`);
-
-      const teamIds = WORK_TYPE_TEAM_MAP[value.name];
-      if (!Array.isArray(teamIds) || teamIds.length === 0 || !subitemId) {
-        console.log(`⚠️ No team mapping found for "${value.name}"`);
-        continue;
-      }
-
-      // Fetch subitem board ID (subitems live on their own board)
-      const boardIdQuery = `
-        query {
-          items(ids: ${subitemId}) {
-            board {
-              id
-            }
-          }
-        }
-      `;
-      const boardIdData = await runGraphQLQuery(boardIdQuery);
-      const subitemBoardId = boardIdData?.data?.items?.[0]?.board?.id;
-      console.log("🧭 Subitem board ID:", subitemBoardId);
-
-      // Prepare and safely escape JSON payload for team assignment
-      const teamValueJson = JSON.stringify({
-        personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
-      });
-      const escapedValue = JSON.stringify(teamValueJson);
-
-      const updateQuery = `
-        mutation {
-          change_column_value(
-            board_id: ${subitemBoardId},
-            item_id: ${subitemId},
-            column_id: "${TEAM_COLUMN_ID}",
-            value: ${escapedValue}
-          ) {
-            id
-          }
-        }
-      `;
-
-      console.log("📤 Assigning team(s):", updateQuery);
-
-      const updateData = await runGraphQLQuery(updateQuery);
-      console.log("📥 Update Response:", JSON.stringify(updateData, null, 2));
-    }
-
+    await createSubitemsAndAssignTeams(itemId, addedValues);
     return res.status(200).json({ message: 'Processed Work Type changes.' });
+  }
+
+  if (event.type === 'create_pulse') {
+    const workTypes = await fetchWorkTypes(itemId);
+    console.log("🆕 Work Types on new item:", workTypes.map(v => v.name));
+    await createSubitemsAndAssignTeams(itemId, workTypes);
+    return res.status(200).json({ message: 'Processed new item with Work Types.' });
   }
 
   console.log("🔕 Ignored event type or column.");
