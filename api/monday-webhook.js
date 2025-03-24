@@ -29,7 +29,7 @@ const WORK_TYPE_TEAM_MAP = {
 
 const TEAM_COLUMN_ID = "person";
 const TIMELINE_COLUMN_ID = "timerange_mkp86nae";
-const DEADLINE_COLUMN_ID = "date_mkpadvv8";
+const DEADLINE_COLUMN_ID = "date_mkpb5r4t";
 
 async function runGraphQLQuery(query) {
   const response = await fetch(MONDAY_API_URL, {
