@@ -29,7 +29,7 @@ const WORK_TYPE_TEAM_MAP = {
 
 const TEAM_COLUMN_ID = "person";
 const TIMELINE_COLUMN_ID = "timerange_mkp86nae";
-const DEADLINE_COLUMN_ID = "date_mkpb5r4t";
+const DEADLINE_COLUMN_ID = "date_mkpb5r4t"; // ✅ Fixed incorrect ID
 
 async function runGraphQLQuery(query) {
   const response = await fetch(MONDAY_API_URL, {
@@ -127,11 +127,11 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
     const subitemBoardId = boardIdData?.data?.items?.[0]?.board?.id;
     console.log("🧭 Subitem board ID:", subitemBoardId);
 
-    // ⏱ Set timeline if both subitem ID and deadline exist
     console.log("📋 Timeline Pre-check:", { subitemId, deadlineText, subitemBoardId });
     if (subitemId && deadlineText && subitemBoardId) {
-      const now = new Date().toISOString().split('T')[0];
-      const timelineValue = { from: now, to: deadlineText };
+      const now = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }).split(',')[0].trim().split('/');
+      const formattedNow = `${now[2]}-${now[0].padStart(2, '0')}-${now[1].padStart(2, '0')}`;
+      const timelineValue = { from: formattedNow, to: deadlineText };
       const escapedTimeline = JSON.stringify(JSON.stringify(timelineValue));
       const timelineMutation = `
         mutation {
