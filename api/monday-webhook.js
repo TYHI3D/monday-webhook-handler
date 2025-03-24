@@ -113,7 +113,9 @@ export default async function handler(req, res) {
       // Assign one or more teams if mapped
       const teamIds = WORK_TYPE_TEAM_MAP[value.name];
       if (Array.isArray(teamIds) && teamIds.length > 0 && subitemId) {
-        const teamValueJson = JSON.stringify({ team_ids: teamIds }).replace(/"/g, '\"');
+        const teamValueJson = JSON.stringify({
+          personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
+        }).replace(/\"/g, '\"');
         const updateQuery = `
           mutation {
             change_column_value(item_id: ${subitemId}, column_id: "${TEAM_COLUMN_ID}", value: "${teamValueJson}") {
