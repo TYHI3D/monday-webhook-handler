@@ -115,7 +115,7 @@ export default async function handler(req, res) {
       if (Array.isArray(teamIds) && teamIds.length > 0 && subitemId) {
         const teamValueJson = JSON.stringify({
           personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
-        }).replace(/"/g, '\\"');
+        }).replace(/"/g, '\"');
         console.log("🛰️ Update Query Payload:", teamValueJson);
         const updateQuery = `
           mutation {
@@ -124,6 +124,7 @@ export default async function handler(req, res) {
             }
           }
         `;
+        console.log("📤 GraphQL Mutation:" + updateQuery);
 
         const updateResponse = await fetch(MONDAY_API_URL, {
           method: 'POST',
