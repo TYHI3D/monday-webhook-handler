@@ -128,6 +128,7 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
     console.log("🧭 Subitem board ID:", subitemBoardId);
 
     // ⏱ Set timeline if both subitem ID and deadline exist
+    console.log("📋 Timeline Pre-check:", { subitemId, deadlineText, subitemBoardId });
     if (subitemId && deadlineText && subitemBoardId) {
       const now = new Date().toISOString().split('T')[0];
       const timelineValue = { from: now, to: deadlineText };
