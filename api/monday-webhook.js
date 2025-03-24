@@ -113,6 +113,30 @@ export default async function handler(req, res) {
       // Assign one or more teams if mapped
       const teamIds = WORK_TYPE_TEAM_MAP[value.name];
       if (Array.isArray(teamIds) && teamIds.length > 0 && subitemId) {
+        // 🔍 Fetch the board ID of the newly created subitem
+        const boardIdQuery = `
+          query {
+            items(ids: ${subitemId}) {
+              board {
+                id
+              }
+            }
+          }
+        `;
+
+        const boardIdResponse = await fetch(MONDAY_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': MONDAY_API_KEY
+          },
+          body: JSON.stringify({ query: boardIdQuery })
+        });
+
+        const boardIdData = await boardIdResponse.json();
+        const subitemBoardId = boardIdData?.data?.items?.[0]?.board?.id;
+        console.log("🧭 Subitem board ID:", subitemBoardId);
+
         const teamValueJson = JSON.stringify({
           personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
         }).replace(/"/g, '\\"');
@@ -120,7 +144,12 @@ export default async function handler(req, res) {
 
         const updateQuery = `
           mutation {
-            change_column_value(item_id: ${subitemId}, column_id: "${TEAM_COLUMN_ID}", value: "${teamValueJson}") {
+            change_column_value(
+              board_id: ${subitemBoardId},
+              item_id: ${subitemId},
+              column_id: "${TEAM_COLUMN_ID}",
+              value: "${teamValueJson}"
+            ) {
               id
             }
           }
@@ -137,7 +166,11 @@ export default async function handler(req, res) {
         });
 
         const updateData = await updateResponse.json();
+        console.log("📥 Update Response:", JSON.stringify(updateData, null, 2));
         console.log(`👥 Assigned teams [${teamIds.join(', ')}] to subitem ${subitemId}`);
+      } else {
+        console.log(`⚠️ No team assignment for "${value.name}"`);
+      }
       } else {
         console.log(`⚠️ No team assignment for "${value.name}"`);
       }
