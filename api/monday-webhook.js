@@ -164,7 +164,19 @@ export default async function handler(req, res) {
   }
 
   if (event.type === 'create_pulse') {
-    const workTypes = await fetchWorkTypes(itemId);
+    let workTypes = [];
+  
+    // Try to pull Work Types from the webhook payload
+    const dropdownColumn = event.columnValues?.dropdown_mkp8c97w;
+    if (dropdownColumn?.chosenValues?.length) {
+      workTypes = dropdownColumn.chosenValues;
+      console.log("🧠 Used Work Types from webhook payload.");
+    } else {
+      // Fallback to GraphQL query
+      workTypes = await fetchWorkTypes(itemId);
+      console.log("🌐 Fetched Work Types from Monday API.");
+    }
+  
     console.log("🆕 Work Types on new item:", workTypes.map(v => v.name));
     await createSubitemsAndAssignTeams(itemId, workTypes);
     return res.status(200).json({ message: 'Processed new item with Work Types.' });
