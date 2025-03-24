@@ -104,6 +104,7 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
       continue;
     }
 
+    // Create the subitem
     const createQuery = `
       mutation {
         create_subitem(parent_item_id: ${itemId}, item_name: "${value.name}") {
@@ -115,32 +116,7 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
     const subitemId = createData?.data?.create_subitem?.id;
     console.log(`✅ Subitem created: ${subitemId} for "${value.name}"`);
 
-    // Assign timeline
-    if (subitemId && deadlineText) {
-      const now = new Date().toISOString().split('T')[0];
-      const timelineValue = JSON.stringify({ from: now, to: deadlineText });
-      const timelineMutation = `
-        mutation {
-          change_column_value(
-            board_id: 0,
-            item_id: ${subitemId},
-            column_id: "${TIMELINE_COLUMN_ID}",
-            value: ${JSON.stringify(timelineValue)}
-          ) {
-            id
-          }
-        }
-      `;
-      console.log("🕓 Setting timeline:", timelineMutation);
-      await runGraphQLQuery(timelineMutation);
-    }
-
-    const teamIds = WORK_TYPE_TEAM_MAP[value.name];
-    if (!Array.isArray(teamIds) || teamIds.length === 0 || !subitemId) {
-      console.log(`⚠️ No team mapping found for "${value.name}"`);
-      continue;
-    }
-
+    // Fetch the board ID of the newly created subitem (used for both timeline and team update)
     const boardIdQuery = `
       query {
         items(ids: ${subitemId}) {
@@ -153,6 +129,33 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
     const boardIdData = await runGraphQLQuery(boardIdQuery);
     const subitemBoardId = boardIdData?.data?.items?.[0]?.board?.id;
     console.log("🧭 Subitem board ID:", subitemBoardId);
+
+    // Assign timeline
+    if (subitemId && deadlineText && subitemBoardId) {
+      const now = new Date().toISOString().split('T')[0];
+      const timelineValue = JSON.stringify({ from: now, to: deadlineText });
+      const timelineMutation = `
+        mutation {
+          change_column_value(
+            board_id: ${subitemBoardId},
+            item_id: ${subitemId},
+            column_id: "${TIMELINE_COLUMN_ID}",
+            value: ${JSON.stringify(timelineValue)}
+          ) {
+            id
+          }
+        }
+      `;
+      console.log("🕓 Setting timeline:", timelineMutation);
+      await runGraphQLQuery(timelineMutation);
+    }
+
+    // Assign team(s) to the subitem
+    const teamIds = WORK_TYPE_TEAM_MAP[value.name];
+    if (!Array.isArray(teamIds) || teamIds.length === 0 || !subitemId) {
+      console.log(`⚠️ No team mapping found for "${value.name}"`);
+      continue;
+    }
 
     const teamValueJson = JSON.stringify({
       personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
