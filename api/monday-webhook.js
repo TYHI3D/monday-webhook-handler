@@ -25,11 +25,11 @@ const WORK_TYPE_TEAM_MAP = {
   "Molding & Casting": [TEAM_IDS.MOLD_DEPARTMENT],
   "Rendering": [TEAM_IDS.DESIGN],
   "Repair / Refinishing": [TEAM_IDS.ART_DEPARTMENT],
-  "Electroplating": [TEAM_IDS.OPERATIONS],
-  "Assembly & Seaming":[TEAM_IDS.PRINT_PROCESSING],
 };
 
 const TEAM_COLUMN_ID = "person"; // Column ID for the People column
+const TIMELINE_COLUMN_ID = "timeline"; // Column ID for the subitem timeline column
+const DEADLINE_COLUMN_ID = "date_mkpadvv8"; // Column ID for the parent item's deadline column
 
 // Utility to perform GraphQL queries
 async function runGraphQLQuery(query) {
@@ -79,9 +79,24 @@ async function fetchWorkTypes(itemId) {
   }
 }
 
+async function fetchDeadline(itemId) {
+  const query = `
+    query {
+      items(ids: ${itemId}) {
+        column_values(ids: "${DEADLINE_COLUMN_ID}") {
+          text
+        }
+      }
+    }
+  `;
+  const data = await runGraphQLQuery(query);
+  return data?.data?.items?.[0]?.column_values?.[0]?.text || null;
+}
+
 async function createSubitemsAndAssignTeams(itemId, workTypes) {
   const existingSubitems = await fetchSubitems(itemId);
   const existingNames = existingSubitems.map(sub => sub.name);
+  const deadlineText = await fetchDeadline(itemId);
 
   for (const value of workTypes) {
     if (existingNames.includes(value.name)) {
@@ -99,6 +114,26 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
     const createData = await runGraphQLQuery(createQuery);
     const subitemId = createData?.data?.create_subitem?.id;
     console.log(`✅ Subitem created: ${subitemId} for "${value.name}"`);
+
+    // Assign timeline
+    if (subitemId && deadlineText) {
+      const now = new Date().toISOString().split('T')[0];
+      const timelineValue = JSON.stringify({ from: now, to: deadlineText });
+      const timelineMutation = `
+        mutation {
+          change_column_value(
+            board_id: 0,
+            item_id: ${subitemId},
+            column_id: "${TIMELINE_COLUMN_ID}",
+            value: ${JSON.stringify(timelineValue)}
+          ) {
+            id
+          }
+        }
+      `;
+      console.log("🕓 Setting timeline:", timelineMutation);
+      await runGraphQLQuery(timelineMutation);
+    }
 
     const teamIds = WORK_TYPE_TEAM_MAP[value.name];
     if (!Array.isArray(teamIds) || teamIds.length === 0 || !subitemId) {
@@ -166,19 +201,7 @@ export default async function handler(req, res) {
   }
 
   if (event.type === 'create_pulse') {
-    let workTypes = [];
-  
-    // Try to pull Work Types from the webhook payload
-    const dropdownColumn = event.columnValues?.dropdown_mkp8c97w;
-    if (dropdownColumn?.chosenValues?.length) {
-      workTypes = dropdownColumn.chosenValues;
-      console.log("🧠 Used Work Types from webhook payload.");
-    } else {
-      // Fallback to GraphQL query
-      workTypes = await fetchWorkTypes(itemId);
-      console.log("🌐 Fetched Work Types from Monday API.");
-    }
-  
+    const workTypes = await fetchWorkTypes(itemId);
     console.log("🆕 Work Types on new item:", workTypes.map(v => v.name));
     await createSubitemsAndAssignTeams(itemId, workTypes);
     return res.status(200).json({ message: 'Processed new item with Work Types.' });
