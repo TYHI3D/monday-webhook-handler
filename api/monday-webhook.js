@@ -1,33 +1,46 @@
 const { json } = require('micro');
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
-const MONDAY_API_KEY = process.env.MONDAY_API_KEY; // Set this in Vercel env variables
+const MONDAY_API_KEY = process.env.MONDAY_API_KEY;
 
 // Define team IDs as constants
-const TEAM_PRINT_PROCESSING = 692112;
-const TEAM_OPERATIONS = 692113;
-const TEAM_FABRICATION = 1164578;
-const TEAM_QUOTING = 1196913;
-const TEAM_ART_DEPARTMENT = 1220277;
-const TEAM_DESIGN = 1220547;
-const TEAM_MOLD_DEPARTMENT = 1220552;
-const TEAM_ELECTRONICS = 1220959;
-
-// Map Work Type dropdown labels to one or more team constants
-const WORK_TYPE_TEAM_MAP = {
-  "3D Printing": [TEAM_PRINT_PROCESSING],
-  "Design": [TEAM_DESIGN],
-  "Electronics": [TEAM_ELECTRONICS],
-  "Painting & Finishing": [TEAM_ART_DEPARTMENT],
-  "Graphics / Transfers": [TEAM_ART_DEPARTMENT, TEAM_DESIGN],
-  "Molding & Casting": [TEAM_MOLD_DEPARTMENT],
-  "Rendering": [TEAM_DESIGN],
-  "Repair / Refinishing": [TEAM_ART_DEPARTMENT],
-  // Add more Work Type labels and corresponding teams as needed
+const TEAM_IDS = {
+  PRINT_PROCESSING: 692112,
+  OPERATIONS: 692113,
+  FABRICATION: 1164578,
+  QUOTING: 1196913,
+  ART_DEPARTMENT: 1220277,
+  DESIGN: 1220547,
+  MOLD_DEPARTMENT: 1220552,
+  ELECTRONICS: 1220959,
 };
 
-// Set your subitem "team" column ID here
-const TEAM_COLUMN_ID = "person"; // Confirmed from subitem data as the Team column
+// Map Work Type dropdown labels to one or more team IDs
+const WORK_TYPE_TEAM_MAP = {
+  "3D Printing": [TEAM_IDS.PRINT_PROCESSING],
+  "Design": [TEAM_IDS.DESIGN],
+  "Electronics": [TEAM_IDS.ELECTRONICS],
+  "Painting & Finishing": [TEAM_IDS.ART_DEPARTMENT],
+  "Graphics / Transfers": [TEAM_IDS.ART_DEPARTMENT, TEAM_IDS.DESIGN],
+  "Molding & Casting": [TEAM_IDS.MOLD_DEPARTMENT],
+  "Rendering": [TEAM_IDS.DESIGN],
+  "Repair / Refinishing": [TEAM_IDS.ART_DEPARTMENT],
+};
+
+const TEAM_COLUMN_ID = "person"; // Column ID for the People column
+
+// Utility to perform GraphQL queries
+async function runGraphQLQuery(query) {
+  const response = await fetch(MONDAY_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: MONDAY_API_KEY,
+    },
+    body: JSON.stringify({ query })
+  });
+  return await response.json();
+}
 
 async function fetchSubitems(parentItemId) {
   const query = `
@@ -40,27 +53,14 @@ async function fetchSubitems(parentItemId) {
       }
     }
   `;
-
-  const response = await fetch(MONDAY_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': MONDAY_API_KEY,
-    },
-    body: JSON.stringify({ query })
-  });
-
-  const data = await response.json();
+  const data = await runGraphQLQuery(query);
   return data?.data?.items?.[0]?.subitems || [];
 }
 
 export default async function handler(req, res) {
   const payload = await json(req);
+  console.log("📦 Webhook Payload:", JSON.stringify(payload, null, 2));
 
-  // Log full webhook payload from Monday
-  console.log("📦 Full Payload from Monday:", JSON.stringify(payload, null, 2));
-
-  // Handle Monday webhook challenge
   if (payload.challenge) {
     return res.status(200).json({ challenge: payload.challenge });
   }
@@ -69,15 +69,12 @@ export default async function handler(req, res) {
   const itemId = event?.pulseId;
 
   if (event.type === 'update_column_value' && event.columnTitle === 'Work Types') {
-    console.log(`✅ Detected Work Types update on item ${itemId}`);
-
     const newValues = event.value?.chosenValues || [];
     const previousValues = event.previousValue?.chosenValues || [];
-
     const prevNames = previousValues.map(v => v.name);
     const addedValues = newValues.filter(v => !prevNames.includes(v.name));
 
-    console.log(`🆕 New Work Types added:`, addedValues.map(v => v.name));
+    console.log("🆕 Added Work Types:", addedValues.map(v => v.name));
 
     const existingSubitems = await fetchSubitems(itemId);
     const existingNames = existingSubitems.map(sub => sub.name);
@@ -88,7 +85,6 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // Create the subitem
       const createQuery = `
         mutation {
           create_subitem(parent_item_id: ${itemId}, item_name: "${value.name}") {
@@ -96,90 +92,58 @@ export default async function handler(req, res) {
           }
         }
       `;
-
-      const createResponse = await fetch(MONDAY_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': MONDAY_API_KEY
-        },
-        body: JSON.stringify({ query: createQuery })
-      });
-
-      const createData = await createResponse.json();
+      const createData = await runGraphQLQuery(createQuery);
       const subitemId = createData?.data?.create_subitem?.id;
-      console.log(`✅ Created subitem "${value.name}" → ID: ${subitemId}`);
+      console.log(`✅ Subitem created: ${subitemId} for "${value.name}"`);
 
-      // Assign one or more teams if mapped
       const teamIds = WORK_TYPE_TEAM_MAP[value.name];
-      if (Array.isArray(teamIds) && teamIds.length > 0 && subitemId) {
-        // 🔍 Fetch the board ID of the newly created subitem
-        const boardIdQuery = `
-          query {
-            items(ids: ${subitemId}) {
-              board {
-                id
-              }
-            }
-          }
-        `;
+      if (!Array.isArray(teamIds) || teamIds.length === 0 || !subitemId) {
+        console.log(`⚠️ No team mapping found for "${value.name}"`);
+        continue;
+      }
 
-        const boardIdResponse = await fetch(MONDAY_API_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': MONDAY_API_KEY
-          },
-          body: JSON.stringify({ query: boardIdQuery })
-        });
-
-        const boardIdData = await boardIdResponse.json();
-        const subitemBoardId = boardIdData?.data?.items?.[0]?.board?.id;
-        console.log("🧭 Subitem board ID:", subitemBoardId);
-
-        const teamValueJson = JSON.stringify({
-          personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
-        });
-        
-        // This escapes the entire JSON string for embedding in the mutation
-        const escapedValue = JSON.stringify(teamValueJson);
-
-        const updateQuery = `
-          mutation {
-            change_column_value(
-              board_id: ${subitemBoardId},
-              item_id: ${subitemId},
-              column_id: "${TEAM_COLUMN_ID}",
-              value: ${escapedValue}
-            ) {
+      // Fetch subitem board ID (subitems live on their own board)
+      const boardIdQuery = `
+        query {
+          items(ids: ${subitemId}) {
+            board {
               id
             }
           }
-        `;
+        }
+      `;
+      const boardIdData = await runGraphQLQuery(boardIdQuery);
+      const subitemBoardId = boardIdData?.data?.items?.[0]?.board?.id;
+      console.log("🧭 Subitem board ID:", subitemBoardId);
 
-        console.log("📤 GraphQL Mutation:" + updateQuery);
+      // Prepare and safely escape JSON payload for team assignment
+      const teamValueJson = JSON.stringify({
+        personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
+      });
+      const escapedValue = JSON.stringify(teamValueJson);
 
-        const updateResponse = await fetch(MONDAY_API_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': MONDAY_API_KEY
-          },
-          body: JSON.stringify({ query: updateQuery })
-        });
+      const updateQuery = `
+        mutation {
+          change_column_value(
+            board_id: ${subitemBoardId},
+            item_id: ${subitemId},
+            column_id: "${TEAM_COLUMN_ID}",
+            value: ${escapedValue}
+          ) {
+            id
+          }
+        }
+      `;
 
-        const updateData = await updateResponse.json();
-        console.log("📥 Update Response:", JSON.stringify(updateData, null, 2));
-        console.log(`👥 Assigned teams [${teamIds.join(', ')}] to subitem ${subitemId}`);
+      console.log("📤 Assigning team(s):", updateQuery);
 
-      } else {
-        console.log(`⚠️ No team assignment for "${value.name}"`);
-      }
+      const updateData = await runGraphQLQuery(updateQuery);
+      console.log("📥 Update Response:", JSON.stringify(updateData, null, 2));
     }
 
-    return res.status(200).json({ message: 'Subitems created and teams assigned if matched' });
+    return res.status(200).json({ message: 'Processed Work Type changes.' });
   }
 
-  console.log(`🔕 Ignoring event: type=${event?.type}, column=${event?.columnTitle}`);
-  return res.status(200).json({ message: 'Ignored: not Work Types column update' });
+  console.log("🔕 Ignored event type or column.");
+  return res.status(200).json({ message: 'Event ignored.' });
 }
