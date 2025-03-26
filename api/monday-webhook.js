@@ -209,11 +209,9 @@ export default async function handler(req, res) {
   }
 
   if (event.type === 'update_column_value' && event.columnTitle === 'Show') {
-    console.log(`🎭 Detected Show assignment for item ${itemId}:`, event.value);
-    // Begin Show column handling logic
-    const newShowValue = event.value;
+    const newShowValue = event.value?.chosenValues?.[0]?.name;
+    console.log(`🎭 Detected Show assignment for item ${itemId}:`, newShowValue);
 
-    // Step 1: Get board ID of the item
     const boardQuery = `
       query {
         items(ids: ${itemId}) {
@@ -233,7 +231,6 @@ export default async function handler(req, res) {
     const allGroups = board?.groups || [];
     const matchingGroup = allGroups.find(group => group.title === newShowValue);
 
-    // Step 2: Create the group if it doesn't exist
     let groupId = matchingGroup?.id;
     if (!groupId) {
       const createGroupMutation = `
@@ -250,7 +247,6 @@ export default async function handler(req, res) {
       console.log(`📁 Group '${newShowValue}' already exists with ID ${groupId}`);
     }
 
-    // Step 3: Move the item to the correct group
     const moveItemMutation = `
       mutation {
         move_item_to_group (item_id: ${itemId}, group_id: "${groupId}") {
@@ -261,7 +257,6 @@ export default async function handler(req, res) {
     const moveItemData = await runGraphQLQuery(moveItemMutation);
     console.log(`📦 Moved item ${itemId} to group ${groupId}`);
 
-    // Placeholder: logic for assigning Job Number goes here
     return res.status(200).json({ message: 'Show column update detected.' });
   }
 
