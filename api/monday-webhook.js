@@ -1,124 +1,4 @@
-// Function to extract numeric job number from formatted job number text
-function extractJobNumber(formattedJobNumber) {
-  if (!formattedJobNumber) {
-    console.log(`🔍 Empty job number, returning 0`);
-    return 0;
-  }
-  
-  console.log(`🔍 Extracting from: "${formattedJobNumber}"`);
-  
-  // Split the string by colon
-  const parts = formattedJobNumber.split(':');
-  console.log(`🔍 Split parts:`, JSON.stringify(parts));
-  
-  // If we have at least two parts (something before and after the colon)
-  if (parts.length >= 2) {
-    const afterColon = parts[1];
-    console.log(`🔍 Part after colon: "${afterColon}"`);
-    
-    const extracted = parseInt(afterColon, 10);
-    if (!isNaN(extracted)) {
-      console.log(`🔍 Successfully extracted: ${extracted}`);
-      return extracted;
-    }
-  }
-  
-  console.log(`🔍 Extraction failed, returning 0`);
-  return 0;
-}// Function to extract numeric job number from formatted job number text
-function extractJobNumber(formattedJobNumber) {
-  console.log(`🔍 [DEBUG] Starting extraction from: "${formattedJobNumber}"`);
-  
-  if (!formattedJobNumber) {
-    console.log(`🔍 [DEBUG] Empty input, returning 0`);
-    return 0;
-  }
-  
-  // Split the string by colon and log each part
-  const parts = formattedJobNumber.split(':');
-  console.log(`🔍 [DEBUG] Split parts:`, JSON.stringify(parts));
-  
-  // If we have at least two parts (something before and after the colon)
-  if (parts.length >= 2) {
-    const beforeColon = parts[0];
-    const afterColon = parts[1];
-    console.log(`🔍 [DEBUG] Before colon: "${beforeColon}", After colon: "${afterColon}"`);
-    
-    const beforeNum = parseInt(beforeColon, 10);
-    const afterNum = parseInt(afterColon, 10);
-    console.log(`🔍 [DEBUG] Before colon as number: ${beforeNum}, After colon as number: ${afterNum}`);
-    
-    if (!isNaN(afterNum)) {
-      console.log(`🔍 [DEBUG] Returning part after colon: ${afterNum}`);
-      return afterNum;
-    } else {
-      console.log(`🔍 [DEBUG] After colon not a valid number`);
-    }
-  } else {
-    console.log(`🔍 [DEBUG] No colon found in string`);
-  }
-  
-  console.log(`🔍 [DEBUG] Extraction failed, returning 0`);
-  return 0;
-}// Function to format the job number with show prefix
-function formatJobNumber(showNumber, jobNumber) {
-  return `${showNumber}:${jobNumber}`;
-}// Function to check if an item already has a job number
-async function itemHasJobNumber(itemId) {
-  const query = `
-    query {
-      items(ids: ${itemId}) {
-        column_values(ids: "${JOB_NUMBER_COLUMN_ID}") {
-          text
-          value
-        }
-      }
-    }
-  `;
-  
-  const data = await runGraphQLQuery(query);
-  const jobNumberText = data?.data?.items?.[0]?.column_values?.[0]?.text;
-  
-  // If the job number exists and is not empty
-  const hasJobNumber = jobNumberText && jobNumberText.trim() !== '';
-  console.log(`🔍 Checking if item ${itemId} has a Job Number: ${hasJobNumber ? 'Yes - ' + jobNumberText : 'No'}`);
-  
-  return hasJobNumber;
-}// Function to fetch items in a group using the items_page field on groups
-async function fetchItemsInGroup(boardId, groupId) {
-  console.log(`🔍 Fetching items for boardId: ${boardId}, groupId: ${groupId}`);
-  
-  // The group ID needs to be passed as a string with proper escaping
-  const query = `
-    query {
-      boards(ids: ${boardId}) {
-        groups(ids: "${groupId}") {
-          items_page {
-            items {
-              id
-              name
-              column_values {
-                id
-                text
-                value
-              }
-            }
-          }
-        }
-      }
-    }
-  `;
-  
-  const data = await runGraphQLQuery(query);
-  const items = data?.data?.boards?.[0]?.groups?.[0]?.items_page?.items || [];
-  
-  console.log(`🔍 Found ${items.length} items in group ${groupId}`);
-  if (items.length > 0) {
-    console.log(`🔍 First item in group:`, JSON.stringify(items[0], null, 2));
-  }
-  
-  return items;
-}const { json } = require('micro');
+const { json } = require('micro');
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 const MONDAY_API_KEY = process.env.MONDAY_API_KEY;
@@ -312,9 +192,85 @@ function extractShowNumber(showName) {
   return null;
 }
 
+// Function to format the job number with show prefix
+function formatJobNumber(showNumber, jobNumber) {
+  return `${showNumber}:${jobNumber}`;
+}
+
+// Function to extract numeric job number from formatted job number text
+function extractJobNumber(formattedJobNumber) {
+  if (!formattedJobNumber) {
+    console.log(`🔍 Empty job number, returning 0`);
+    return 0;
+  }
+  
+  console.log(`🔍 Extracting from: "${formattedJobNumber}"`);
+  
+  // Split the string by colon
+  const parts = formattedJobNumber.split(':');
+  console.log(`🔍 Split parts:`, JSON.stringify(parts));
+  
+  // If we have at least two parts (something before and after the colon)
+  if (parts.length >= 2) {
+    const afterColon = parts[1];
+    console.log(`🔍 Part after colon: "${afterColon}"`);
+    
+    const extracted = parseInt(afterColon, 10);
+    if (!isNaN(extracted)) {
+      console.log(`🔍 Successfully extracted: ${extracted}`);
+      return extracted;
+    }
+  }
+  
+  console.log(`🔍 Extraction failed, returning 0`);
+  return 0;
+}
+
+// Function to fetch items in a group using the items_page field on groups
+async function fetchItemsInGroup(boardId, groupId) {
+  console.log(`🔍 Fetching items for boardId: ${boardId}, groupId: ${groupId}`);
+  
+  // The group ID needs to be passed as a string with proper escaping
+  const query = `
+    query {
+      boards(ids: ${boardId}) {
+        groups(ids: "${groupId}") {
+          items_page {
+            items {
+              id
+              name
+              column_values {
+                id
+                text
+                value
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  
+  const data = await runGraphQLQuery(query);
+  const items = data?.data?.boards?.[0]?.groups?.[0]?.items_page?.items || [];
+  
+  console.log(`🔍 Found ${items.length} items in group ${groupId}`);
+  if (items.length > 0) {
+    console.log(`🔍 First item in group:`, JSON.stringify(items[0], null, 2));
+  }
+  
+  return items;
+}
+
+// Helper function to log all details of column values to help debug 
+function logColumnValue(item, columnId) {
+  const column = item.column_values.find(col => col.id === columnId);
+  console.log(`🔎 Column ${columnId} for item ${item.id}:`, JSON.stringify(column));
+  return column;
+}
+
 // Function to get the next job number for a group
 async function getNextJobNumber(boardId, groupId) {
-  // Get all items in the group
   const items = await fetchItemsInGroup(boardId, groupId);
   
   // If no items exist in the group, start with 1
@@ -323,28 +279,70 @@ async function getNextJobNumber(boardId, groupId) {
     return 1;
   }
   
-  console.log(`📊 Found ${items.length} items in the group`);
+  console.log(`📊 Found ${items.length} items in group ${groupId}`);
   
   // Extract job numbers from all items in the group
-  const jobNumbers = items.map(item => {
+  const jobNumbers = [];
+  
+  for (const item of items) {
     // Find the job number column among all columns
     const jobNumberColumn = item.column_values.find(col => col.id === JOB_NUMBER_COLUMN_ID);
-    const jobNumberText = jobNumberColumn?.text;
     
-    // Parse the job number as an integer, default to 0 if not a valid number
-    const parsedNumber = jobNumberText ? parseInt(jobNumberText, 10) || 0 : 0;
-    console.log(`📊 Item ${item.id}: Job Number = ${parsedNumber}`);
-    return parsedNumber;
-  });
+    if (!jobNumberColumn) {
+      console.log(`📊 No job number column found for item ${item.id}`);
+      continue;
+    }
+    
+    const formattedJobNumber = jobNumberColumn.text || '';
+    console.log(`📊 Item ${item.id}: Raw Job Number text = "${formattedJobNumber}"`);
+    
+    // Only process if there's a value
+    if (formattedJobNumber && formattedJobNumber.trim() !== '') {
+      // Extract the job number using our function
+      const jobNumber = extractJobNumber(formattedJobNumber);
+      
+      if (jobNumber > 0) {
+        jobNumbers.push(jobNumber);
+        console.log(`📊 Added job number ${jobNumber} to tracking`);
+      }
+    }
+  }
   
   // Find the highest job number
-  const highestJobNumber = Math.max(...jobNumbers, 0);
-  console.log(`📊 Highest existing Job Number: ${highestJobNumber}`);
+  let highestJobNumber = 0;
+  if (jobNumbers.length > 0) {
+    highestJobNumber = Math.max(...jobNumbers);
+  }
+  console.log(`📊 Highest job number found: ${highestJobNumber}`);
   
   // Return the next job number
   const nextJobNumber = highestJobNumber + 1;
-  console.log(`📊 Next Job Number will be: ${nextJobNumber}`);
+  console.log(`📊 Next job number will be: ${nextJobNumber}`);
+  
   return nextJobNumber;
+}
+
+// Function to check if an item already has a job number
+async function itemHasJobNumber(itemId) {
+  const query = `
+    query {
+      items(ids: ${itemId}) {
+        column_values(ids: "${JOB_NUMBER_COLUMN_ID}") {
+          text
+          value
+        }
+      }
+    }
+  `;
+  
+  const data = await runGraphQLQuery(query);
+  const jobNumberText = data?.data?.items?.[0]?.column_values?.[0]?.text;
+  
+  // If the job number exists and is not empty
+  const hasJobNumber = jobNumberText && jobNumberText.trim() !== '';
+  console.log(`🔍 Checking if item ${itemId} has a Job Number: ${hasJobNumber ? 'Yes - ' + jobNumberText : 'No'}`);
+  
+  return hasJobNumber;
 }
 
 // New function to set the job number for an item with the formatted text
@@ -372,7 +370,7 @@ async function setJobNumber(boardId, itemId, formattedJobNumber) {
   return result;
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   const payload = await json(req);
   console.log("📦 Webhook Payload:", JSON.stringify(payload, null, 2));
 
@@ -520,4 +518,4 @@ export default async function handler(req, res) {
 
   console.log("🔕 Ignored event type or column.");
   return res.status(200).json({ message: 'Event ignored.' });
-}
+};
