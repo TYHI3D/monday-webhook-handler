@@ -184,10 +184,12 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
 async function fetchItemsInGroup(boardId, groupId) {
   console.log(`🔍 Fetching items for boardId: ${boardId}, groupId: ${groupId}`);
   
+  // Make sure we're sending the group ID without quotes in the query
+  // Monday.com API expects this format
   const query = `
     query {
       boards(ids: ${boardId}) {
-        groups(ids: "${groupId}") {
+        groups(ids: ${groupId}) {
           items_page {
             items {
               id
@@ -205,7 +207,10 @@ async function fetchItemsInGroup(boardId, groupId) {
     }
   `;
   
+  console.log(`🔍 Executing query: ${query}`);
   const data = await runGraphQLQuery(query);
+  console.log(`🔍 Query response:`, JSON.stringify(data, null, 2));
+  
   const items = data?.data?.boards?.[0]?.groups?.[0]?.items_page?.items || [];
   
   console.log(`🔍 Found ${items.length} items in group ${groupId}`);
