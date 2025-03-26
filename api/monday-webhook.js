@@ -4,15 +4,21 @@ function extractJobNumber(formattedJobNumber) {
   
   console.log(`🔍 Extracting job number from: "${formattedJobNumber}"`);
   
-  // Match specifically for the pattern of "digits:digits"
-  const match = formattedJobNumber.match(/^\d+:(\d+)$/);
-  if (match && match[1]) {
-    const extracted = parseInt(match[1], 10);
-    console.log(`🔍 Extracted job number: ${extracted}`);
-    return extracted;
+  // Split the string by colon and take the second part
+  const parts = formattedJobNumber.split(':');
+  
+  // If we have at least two parts (something before and after the colon)
+  if (parts.length >= 2) {
+    const jobNumberPart = parts[1];
+    const extracted = parseInt(jobNumberPart, 10);
+    
+    if (!isNaN(extracted)) {
+      console.log(`🔍 Extracted job number (after colon): ${extracted}`);
+      return extracted;
+    }
   }
   
-  console.log(`🔍 No job number found, returning 0`);
+  console.log(`🔍 No valid job number found after colon, returning 0`);
   return 0;
 }// Function to format the job number with show prefix
 function formatJobNumber(showNumber, jobNumber) {
