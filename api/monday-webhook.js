@@ -212,6 +212,41 @@ export default async function handler(req, res) {
     const newShowValue = event.value?.chosenValues?.[0]?.name;
     console.log(`🎭 Detected Show assignment for item ${itemId}:`, newShowValue);
 
+    if (!newShowValue || newShowValue === 'N/A') {
+      const boardQuery = `
+        query {
+          items(ids: ${itemId}) {
+            board {
+              id
+              groups {
+                id
+                title
+              }
+            }
+          }
+        }
+      `;
+      const boardData = await runGraphQLQuery(boardQuery);
+      const board = boardData?.data?.items?.[0]?.board;
+      const allGroups = board?.groups || [];
+      const generalGroup = allGroups.find(group => group.title === 'General Projects');
+      if (!generalGroup) {
+        console.warn("⚠️ 'General Projects' group not found.");
+        return res.status(200).json({ message: "General Projects group missing." });
+      }
+
+      const moveItemMutation = `
+        mutation {
+          move_item_to_group (item_id: ${itemId}, group_id: "${generalGroup.id}") {
+            id
+          }
+        }
+      `;
+      await runGraphQLQuery(moveItemMutation);
+      console.log(`📦 Moved item ${itemId} to group ${generalGroup.id}`);
+      return res.status(200).json({ message: 'Show column was empty or N/A. Moved to General Projects.' });
+    }
+
     const boardQuery = `
       query {
         items(ids: ${itemId}) {
@@ -229,10 +264,14 @@ export default async function handler(req, res) {
     const board = boardData?.data?.items?.[0]?.board;
     const boardId = board?.id;
     const allGroups = board?.groups || [];
-    const matchingGroup = allGroups.find(group => group.title === newShowValue);
 
-    let groupId = matchingGroup?.id;
-    if (!groupId) {
+    const matchingGroup = allGroups.find(group => group.title === newShowValue);
+    let groupId;
+
+    if (matchingGroup) {
+      groupId = matchingGroup.id;
+      console.log(`📁 Group '${newShowValue}' already exists with ID ${groupId}`);
+    } else {
       const createGroupMutation = `
         mutation {
           create_group(board_id: ${boardId}, group_name: "${newShowValue}") {
@@ -243,8 +282,6 @@ export default async function handler(req, res) {
       const createGroupData = await runGraphQLQuery(createGroupMutation);
       groupId = createGroupData?.data?.create_group?.id;
       console.log(`📂 Created new group '${newShowValue}' with ID ${groupId}`);
-    } else {
-      console.log(`📁 Group '${newShowValue}' already exists with ID ${groupId}`);
     }
 
     const moveItemMutation = `
@@ -254,7 +291,7 @@ export default async function handler(req, res) {
         }
       }
     `;
-    const moveItemData = await runGraphQLQuery(moveItemMutation);
+    await runGraphQLQuery(moveItemMutation);
     console.log(`📦 Moved item ${itemId} to group ${groupId}`);
 
     return res.status(200).json({ message: 'Show column update detected.' });
