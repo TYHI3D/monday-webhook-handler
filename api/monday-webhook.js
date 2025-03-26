@@ -4,8 +4,8 @@ function extractJobNumber(formattedJobNumber) {
   
   console.log(`🔍 Extracting job number from: "${formattedJobNumber}"`);
   
-  // Extract the number after the colon in strings like "19:2" or "123:45"
-  const match = formattedJobNumber.match(/:(\d+)$/);
+  // Match specifically for the pattern of "digits:digits"
+  const match = formattedJobNumber.match(/^\d+:(\d+)$/);
   if (match && match[1]) {
     const extracted = parseInt(match[1], 10);
     console.log(`🔍 Extracted job number: ${extracted}`);
