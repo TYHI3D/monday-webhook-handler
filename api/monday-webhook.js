@@ -2,11 +2,17 @@
 function extractJobNumber(formattedJobNumber) {
   if (!formattedJobNumber) return 0;
   
+  console.log(`🔍 Extracting job number from: "${formattedJobNumber}"`);
+  
   // Extract the number after the colon in strings like "19:2" or "123:45"
   const match = formattedJobNumber.match(/:(\d+)$/);
   if (match && match[1]) {
-    return parseInt(match[1], 10);
+    const extracted = parseInt(match[1], 10);
+    console.log(`🔍 Extracted job number: ${extracted}`);
+    return extracted;
   }
+  
+  console.log(`🔍 No job number found, returning 0`);
   return 0;
 }// Function to format the job number with show prefix
 function formatJobNumber(showNumber, jobNumber) {
