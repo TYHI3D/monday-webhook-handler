@@ -15,7 +15,6 @@ const TEAM_IDS = {
   ELECTRONICS: 1220959,
 };
 
-// Map Work Type dropdown labels to one or more team IDs
 const WORK_TYPE_TEAM_MAP = {
   "3D Printing": [TEAM_IDS.PRINT_PROCESSING],
   "Design": [TEAM_IDS.DESIGN],
@@ -30,7 +29,6 @@ const WORK_TYPE_TEAM_MAP = {
 const TEAM_COLUMN_ID = "person";
 const TIMELINE_COLUMN_ID = "timerange_mkp86nae";
 const DEADLINE_COLUMN_ID = "date_mkpb5r4t";
-const JOB_NUMBER_COLUMN_ID = "numbers";
 const GENERAL_PROJECTS_GROUP_ID = "new_group29179";
 const SHOW_COLUMN_ID = "dropdown_mkp87fs0";
 
@@ -105,46 +103,6 @@ async function fetchDeadline(itemId) {
   `;
   const data = await runGraphQLQuery(query);
   return data?.data?.items?.[0]?.column_values?.[0]?.text || null;
-}
-
-async function assignJobNumber(itemId, groupId, boardId) {
-  const query = `
-    query {
-      boards(ids: ${boardId}) {
-        groups(ids: "${groupId}") {
-          items {
-            id
-            name
-            column_values(ids: "${JOB_NUMBER_COLUMN_ID}") {
-              text
-            }
-          }
-        }
-      }
-    }
-  `;
-  const data = await runGraphQLQuery(query);
-  const items = data?.data?.boards?.[0]?.groups?.[0]?.items || [];
-  const jobNumbers = items
-    .map(item => parseInt(item.column_values?.[0]?.text))
-    .filter(num => !isNaN(num));
-  const nextJobNumber = jobNumbers.length ? Math.max(...jobNumbers) + 1 : 1;
-
-  const mutation = `
-    mutation {
-      change_column_value(
-        board_id: ${boardId},
-        item_id: ${itemId},
-        column_id: "${JOB_NUMBER_COLUMN_ID}",
-        value: "${nextJobNumber}"
-      ) {
-        id
-      }
-    }
-  `;
-
-  console.log(`🔢 Assigning Job Number ${nextJobNumber} to item ${itemId}`);
-  await runGraphQLQuery(mutation);
 }
 
 async function createSubitemsAndAssignTeams(itemId, workTypes) {
@@ -266,7 +224,6 @@ async function handleWebhookLogic(event) {
       }
     `;
     await runGraphQLQuery(moveItemQuery);
-    await assignJobNumber(itemId, targetGroupId, boardId);
   }
 }
 
