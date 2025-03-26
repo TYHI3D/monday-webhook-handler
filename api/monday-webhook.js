@@ -1,4 +1,38 @@
-// Function to fetch items in a group using the items_page field on groups
+// Function to extract numeric job number from formatted job number text
+function extractJobNumber(formattedJobNumber) {
+  if (!formattedJobNumber) return 0;
+  
+  // Extract the number after the colon in strings like "19:2" or "123:45"
+  const match = formattedJobNumber.match(/:(\d+)$/);
+  if (match && match[1]) {
+    return parseInt(match[1], 10);
+  }
+  return 0;
+}// Function to format the job number with show prefix
+function formatJobNumber(showNumber, jobNumber) {
+  return `${showNumber}:${jobNumber}`;
+}// Function to check if an item already has a job number
+async function itemHasJobNumber(itemId) {
+  const query = `
+    query {
+      items(ids: ${itemId}) {
+        column_values(ids: "${JOB_NUMBER_COLUMN_ID}") {
+          text
+          value
+        }
+      }
+    }
+  `;
+  
+  const data = await runGraphQLQuery(query);
+  const jobNumberText = data?.data?.items?.[0]?.column_values?.[0]?.text;
+  
+  // If the job number exists and is not empty
+  const hasJobNumber = jobNumberText && jobNumberText.trim() !== '';
+  console.log(`🔍 Checking if item ${itemId} has a Job Number: ${hasJobNumber ? 'Yes - ' + jobNumberText : 'No'}`);
+  
+  return hasJobNumber;
+}// Function to fetch items in a group using the items_page field on groups
 async function fetchItemsInGroup(boardId, groupId) {
   console.log(`🔍 Fetching items for boardId: ${boardId}, groupId: ${groupId}`);
   
@@ -64,7 +98,7 @@ const WORK_TYPE_TEAM_MAP = {
 const TEAM_COLUMN_ID = "person";
 const TIMELINE_COLUMN_ID = "timerange_mkp86nae";
 const DEADLINE_COLUMN_ID = "date_mkpb5r4t"; // ✅ Fixed incorrect ID
-const JOB_NUMBER_COLUMN_ID = "numeric_mkpd82ef"; // Column ID for Job Number
+const JOB_NUMBER_COLUMN_ID = "text_mkpd32rc"; // Updated to the new text column
 
 async function runGraphQLQuery(query) {
   const response = await fetch(MONDAY_API_URL, {
@@ -214,27 +248,16 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
   }
 }
 
-// Function to check if an item already has a job number
-async function itemHasJobNumber(itemId) {
-  const query = `
-    query {
-      items(ids: ${itemId}) {
-        column_values(ids: "${JOB_NUMBER_COLUMN_ID}") {
-          text
-          value
-        }
-      }
-    }
-  `;
+// Function to extract show number from show name
+function extractShowNumber(showName) {
+  if (!showName) return null;
   
-  const data = await runGraphQLQuery(query);
-  const jobNumberText = data?.data?.items?.[0]?.column_values?.[0]?.text;
-  
-  // If the job number exists and is not empty or zero
-  const hasJobNumber = jobNumberText && jobNumberText.trim() !== '' && jobNumberText !== '0';
-  console.log(`🔍 Checking if item ${itemId} has a Job Number: ${hasJobNumber ? 'Yes - ' + jobNumberText : 'No'}`);
-  
-  return hasJobNumber;
+  // Extract the number prefix from strings like "19 - Dakota" or "123 - Project Name"
+  const match = showName.match(/^(\d+)\s*-/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  return null;
 }
 
 // Function to get the next job number for a group
@@ -272,10 +295,10 @@ async function getNextJobNumber(boardId, groupId) {
   return nextJobNumber;
 }
 
-// New function to set the job number for an item
-async function setJobNumber(boardId, itemId, jobNumber) {
-  // For number columns, we need to format it correctly
-  const jobNumberValue = JSON.stringify(jobNumber.toString());
+// New function to set the job number for an item with the formatted text
+async function setJobNumber(boardId, itemId, formattedJobNumber) {
+  // For text columns, we need to wrap the value in a JSON string
+  const jobNumberValue = JSON.stringify(formattedJobNumber);
   
   const mutation = `
     mutation {
@@ -290,7 +313,7 @@ async function setJobNumber(boardId, itemId, jobNumber) {
     }
   `;
   
-  console.log(`🔢 Setting Job Number to ${jobNumber} for item ${itemId}`);
+  console.log(`🔢 Setting formatted Job Number to "${formattedJobNumber}" for item ${itemId}`);
   const result = await runGraphQLQuery(mutation);
   console.log(`🔢 Job Number update result:`, JSON.stringify(result, null, 2));
   return result;
@@ -411,6 +434,13 @@ export default async function handler(req, res) {
     await runGraphQLQuery(moveItemMutation);
     console.log(`📦 Moved item ${itemId} to group ${groupId}`);
 
+    // Extract the show number from the show name
+    const showNumber = extractShowNumber(newShowValue);
+    if (!showNumber) {
+      console.warn(`⚠️ Could not extract show number from '${newShowValue}'`);
+      return res.status(200).json({ message: 'Could not extract show number from show name.' });
+    }
+    
     // Add a short delay to ensure the item is fully moved to the group before querying
     console.log(`⏱️ Brief wait for item move to complete before checking Job Number`);
     await new Promise(resolve => setTimeout(resolve, 1000)); // Reduced to 1 second
@@ -421,10 +451,15 @@ export default async function handler(req, res) {
     if (hasExistingJobNumber) {
       console.log(`🔢 Item ${itemId} already has a Job Number - keeping existing value`);
     } else {
-      // Get the next job number for this group and assign it to the item
+      // Get the next job number for this group
       const nextJobNumber = await getNextJobNumber(boardId, groupId);
-      await setJobNumber(boardId, itemId, nextJobNumber);
-      console.log(`🔢 Assigned Job Number ${nextJobNumber} to item ${itemId}`);
+      
+      // Format the job number with the show prefix
+      const formattedJobNumber = formatJobNumber(showNumber, nextJobNumber);
+      
+      // Assign the formatted job number
+      await setJobNumber(boardId, itemId, formattedJobNumber);
+      console.log(`🔢 Assigned Job Number ${formattedJobNumber} to item ${itemId}`);
     }
 
     return res.status(200).json({ message: 'Show column update detected and Job Number assigned.' });
