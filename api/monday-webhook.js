@@ -1,24 +1,37 @@
 // Function to extract numeric job number from formatted job number text
 function extractJobNumber(formattedJobNumber) {
-  if (!formattedJobNumber) return 0;
+  console.log(`🔍 [DEBUG] Starting extraction from: "${formattedJobNumber}"`);
   
-  console.log(`🔍 Extracting job number from: "${formattedJobNumber}"`);
+  if (!formattedJobNumber) {
+    console.log(`🔍 [DEBUG] Empty input, returning 0`);
+    return 0;
+  }
   
-  // Split the string by colon and take the second part
+  // Split the string by colon and log each part
   const parts = formattedJobNumber.split(':');
+  console.log(`🔍 [DEBUG] Split parts:`, JSON.stringify(parts));
   
   // If we have at least two parts (something before and after the colon)
   if (parts.length >= 2) {
-    const jobNumberPart = parts[1];
-    const extracted = parseInt(jobNumberPart, 10);
+    const beforeColon = parts[0];
+    const afterColon = parts[1];
+    console.log(`🔍 [DEBUG] Before colon: "${beforeColon}", After colon: "${afterColon}"`);
     
-    if (!isNaN(extracted)) {
-      console.log(`🔍 Extracted job number (after colon): ${extracted}`);
-      return extracted;
+    const beforeNum = parseInt(beforeColon, 10);
+    const afterNum = parseInt(afterColon, 10);
+    console.log(`🔍 [DEBUG] Before colon as number: ${beforeNum}, After colon as number: ${afterNum}`);
+    
+    if (!isNaN(afterNum)) {
+      console.log(`🔍 [DEBUG] Returning part after colon: ${afterNum}`);
+      return afterNum;
+    } else {
+      console.log(`🔍 [DEBUG] After colon not a valid number`);
     }
+  } else {
+    console.log(`🔍 [DEBUG] No colon found in string`);
   }
   
-  console.log(`🔍 No valid job number found after colon, returning 0`);
+  console.log(`🔍 [DEBUG] Extraction failed, returning 0`);
   return 0;
 }// Function to format the job number with show prefix
 function formatJobNumber(showNumber, jobNumber) {
