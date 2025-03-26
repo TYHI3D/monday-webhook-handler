@@ -393,9 +393,9 @@ export default async function handler(req, res) {
     await runGraphQLQuery(moveItemMutation);
     console.log(`📦 Moved item ${itemId} to group ${groupId}`);
 
-    // Add a delay to ensure the item is fully moved to the group before querying
-    console.log(`⏱️ Waiting for item move to complete before assigning Job Number`);
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Add a short delay to ensure the item is fully moved to the group before querying
+    console.log(`⏱️ Brief wait for item move to complete before assigning Job Number`);
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Reduced to 1 second
 
     // Get the next job number for this group and assign it to the item
     const nextJobNumber = await getNextJobNumber(boardId, groupId);
