@@ -29,8 +29,8 @@ const WORK_TYPE_TEAM_MAP = {
 
 const TEAM_COLUMN_ID = "person";
 const TIMELINE_COLUMN_ID = "timerange_mkp86nae";
-const DEADLINE_COLUMN_ID = "date_mkpb5r4t";
-const JOB_NUMBER_COLUMN_ID = "numbers";
+const DEADLINE_COLUMN_ID = "date_mkpb5r4t"; // ✅ Fixed incorrect ID
+const JOB_NUMBER_COLUMN_ID = "numeric_mkpd82ef"; // Column ID for Job Number
 
 async function runGraphQLQuery(query) {
   const response = await fetch(MONDAY_API_URL, {
@@ -44,60 +44,19 @@ async function runGraphQLQuery(query) {
   return await response.json();
 }
 
-async function assignJobNumber(itemId, boardId, groupId) {
+async function fetchSubitems(parentItemId) {
   const query = `
     query {
-      boards(ids: ${boardId}) {
-        groups(ids: ["${groupId}"]) {
-          items {
-            id
-            column_values(ids: ["${JOB_NUMBER_COLUMN_ID}"]) {
-              text
-            }
-          }
+      items(ids: ${parentItemId}) {
+        subitems {
+          id
+          name
         }
       }
     }
   `;
   const data = await runGraphQLQuery(query);
-  const items = data?.data?.boards?.[0]?.groups?.[0]?.items || [];
-
-  let maxJobNumber = 0;
-  for (const item of items) {
-    const jobText = item?.column_values?.[0]?.text;
-    const jobNum = parseInt(jobText);
-    if (!isNaN(jobNum) && jobNum > maxJobNumber) {
-      maxJobNumber = jobNum;
-    }
-  }
-  const newJobNumber = maxJobNumber + 1;
-  console.log(`🔢 Assigning Job Number ${newJobNumber} to item ${itemId}`);
-
-  const mutation = `
-    mutation {
-      change_column_value(
-        board_id: ${boardId},
-        item_id: ${itemId},
-        column_id: "${JOB_NUMBER_COLUMN_ID}",
-        value: "\"${newJobNumber}\""
-      ) {
-        id
-      }
-    }
-  `;
-  await runGraphQLQuery(mutation);
-}
-
-async function fetchItemBoardId(itemId) {
-  const query = `
-    query {
-      items(ids: ${itemId}) {
-        board { id }
-      }
-    }
-  `;
-  const data = await runGraphQLQuery(query);
-  return data?.data?.items?.[0]?.board?.id;
+  return data?.data?.items?.[0]?.subitems || [];
 }
 
 async function fetchWorkTypes(itemId) {
@@ -120,21 +79,6 @@ async function fetchWorkTypes(itemId) {
   }
 }
 
-async function fetchSubitems(itemId) {
-  const query = `
-    query {
-      items(ids: ${itemId}) {
-        subitems {
-          id
-          name
-        }
-      }
-    }
-  `;
-  const data = await runGraphQLQuery(query);
-  return data?.data?.items?.[0]?.subitems || [];
-}
-
 async function fetchDeadline(itemId) {
   const query = `
     query {
@@ -155,7 +99,10 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
   const deadlineText = await fetchDeadline(itemId);
 
   for (const value of workTypes) {
-    if (existingNames.includes(value.name)) continue;
+    if (existingNames.includes(value.name)) {
+      console.log(`⚠️ Skipping duplicate subitem "${value.name}"`);
+      continue;
+    }
 
     const createQuery = `
       mutation {
@@ -166,11 +113,23 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
     `;
     const createData = await runGraphQLQuery(createQuery);
     const subitemId = createData?.data?.create_subitem?.id;
-    if (!subitemId) continue;
+    console.log(`✅ Subitem created: ${subitemId} for "${value.name}"`);
 
-    const boardId = await fetchItemBoardId(subitemId);
+    const boardIdQuery = `
+      query {
+        items(ids: ${subitemId}) {
+          board {
+            id
+          }
+        }
+      }
+    `;
+    const boardIdData = await runGraphQLQuery(boardIdQuery);
+    const subitemBoardId = boardIdData?.data?.items?.[0]?.board?.id;
+    console.log("🧭 Subitem board ID:", subitemBoardId);
 
-    if (deadlineText) {
+    console.log("📋 Timeline Pre-check:", { subitemId, deadlineText, subitemBoardId });
+    if (subitemId && deadlineText && subitemBoardId) {
       const now = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }).split(',')[0].trim().split('/');
       const formattedNow = `${now[2]}-${now[0].padStart(2, '0')}-${now[1].padStart(2, '0')}`;
       const timelineValue = { from: formattedNow, to: deadlineText };
@@ -178,111 +137,239 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
       const timelineMutation = `
         mutation {
           change_column_value(
-            board_id: ${boardId},
+            board_id: ${subitemBoardId},
             item_id: ${subitemId},
             column_id: "${TIMELINE_COLUMN_ID}",
             value: ${escapedTimeline}
-          ) { id }
+          ) {
+            id
+          }
         }
       `;
+      console.log("🕓 Setting timeline:", timelineMutation);
       await runGraphQLQuery(timelineMutation);
     }
 
     const teamIds = WORK_TYPE_TEAM_MAP[value.name];
-    if (!teamIds?.length) continue;
+    if (!Array.isArray(teamIds) || teamIds.length === 0 || !subitemId) {
+      console.log(`⚠️ No team mapping found for "${value.name}"`);
+      continue;
+    }
 
-    const teamValueJson = JSON.stringify({ personsAndTeams: teamIds.map(id => ({ id, kind: "team" })) });
+    const teamValueJson = JSON.stringify({
+      personsAndTeams: teamIds.map(id => ({ id, kind: "team" }))
+    });
     const escapedTeamValue = JSON.stringify(teamValueJson);
+
     const teamMutation = `
       mutation {
         change_column_value(
-          board_id: ${boardId},
+          board_id: ${subitemBoardId},
           item_id: ${subitemId},
           column_id: "${TEAM_COLUMN_ID}",
           value: ${escapedTeamValue}
-        ) { id }
+        ) {
+          id
+        }
       }
     `;
-    await runGraphQLQuery(teamMutation);
+
+    console.log("📤 Assigning team(s):", teamMutation);
+    const updateData = await runGraphQLQuery(teamMutation);
+    console.log("📥 Update Response:", JSON.stringify(updateData, null, 2));
   }
 }
 
-async function handleWebhookLogic(event) {
+// New function to get all items in a group
+async function fetchItemsInGroup(boardId, groupId) {
+  const query = `
+    query {
+      boards(ids: ${boardId}) {
+        groups(ids: "${groupId}") {
+          items {
+            id
+            name
+            column_values(ids: "${JOB_NUMBER_COLUMN_ID}") {
+              text
+              value
+            }
+          }
+        }
+      }
+    }
+  `;
+  const data = await runGraphQLQuery(query);
+  return data?.data?.boards?.[0]?.groups?.[0]?.items || [];
+}
+
+// New function to determine the next job number for a group
+async function getNextJobNumber(boardId, groupId) {
+  const items = await fetchItemsInGroup(boardId, groupId);
+  
+  // If no items exist in the group, start with 1
+  if (!items || items.length === 0) {
+    return 1;
+  }
+  
+  // Extract job numbers from all items in the group
+  const jobNumbers = items.map(item => {
+    const jobNumberText = item.column_values[0]?.text;
+    // Parse the job number as an integer, default to 0 if not a valid number
+    return jobNumberText ? parseInt(jobNumberText, 10) || 0 : 0;
+  });
+  
+  // Find the highest job number
+  const highestJobNumber = Math.max(...jobNumbers, 0);
+  
+  // Return the next job number
+  return highestJobNumber + 1;
+}
+
+// New function to set the job number for an item
+async function setJobNumber(boardId, itemId, jobNumber) {
+  const jobNumberValue = JSON.stringify(jobNumber.toString());
+  
+  const mutation = `
+    mutation {
+      change_column_value(
+        board_id: ${boardId},
+        item_id: ${itemId},
+        column_id: "${JOB_NUMBER_COLUMN_ID}",
+        value: ${jobNumberValue}
+      ) {
+        id
+      }
+    }
+  `;
+  
+  console.log(`🔢 Setting Job Number to ${jobNumber} for item ${itemId}`);
+  const result = await runGraphQLQuery(mutation);
+  return result;
+}
+
+export default async function handler(req, res) {
+  const payload = await json(req);
+  console.log("📦 Webhook Payload:", JSON.stringify(payload, null, 2));
+
+  if (payload.challenge) {
+    return res.status(200).json({ challenge: payload.challenge });
+  }
+
+  const event = payload.event;
   const itemId = event?.pulseId;
-  let boardId = event?.boardId;
-  const groupId = event?.groupId;
-  if (!boardId && itemId) boardId = await fetchItemBoardId(itemId);
-  if (!itemId || !boardId) return;
 
   if (event.type === 'update_column_value' && event.columnTitle === 'Work Types') {
     const newValues = event.value?.chosenValues || [];
     const previousValues = event.previousValue?.chosenValues || [];
     const prevNames = previousValues.map(v => v.name);
     const addedValues = newValues.filter(v => !prevNames.includes(v.name));
+
+    console.log("🆕 Added Work Types:", addedValues.map(v => v.name));
     await createSubitemsAndAssignTeams(itemId, addedValues);
-    return;
+    return res.status(200).json({ message: 'Processed Work Type changes.' });
   }
 
   if (event.type === 'create_pulse') {
     const workTypes = await fetchWorkTypes(itemId);
+    console.log("🆕 Work Types on new item:", workTypes.map(v => v.name));
     await createSubitemsAndAssignTeams(itemId, workTypes);
-    return;
+    return res.status(200).json({ message: 'Processed new item with Work Types.' });
   }
 
   if (event.type === 'update_column_value' && event.columnTitle === 'Show') {
-    const showValue = event.value?.chosenValues?.[0]?.name;
-    const GENERAL_PROJECTS_GROUP_ID = "new_group29179";
+    const newShowValue = event.value?.chosenValues?.[0]?.name;
+    console.log(`🎭 Detected Show assignment for item ${itemId}:`, newShowValue);
 
-    if (!showValue || showValue === "N/A") {
-      const moveBackQuery = `
-        mutation {
-          move_item_to_group (item_id: ${itemId}, group_id: "${GENERAL_PROJECTS_GROUP_ID}") { id }
+    if (!newShowValue || newShowValue === 'N/A') {
+      const boardQuery = `
+        query {
+          items(ids: ${itemId}) {
+            board {
+              id
+              groups {
+                id
+                title
+              }
+            }
+          }
         }
       `;
-      await runGraphQLQuery(moveBackQuery);
-      return;
+      const boardData = await runGraphQLQuery(boardQuery);
+      const board = boardData?.data?.items?.[0]?.board;
+      const allGroups = board?.groups || [];
+      const generalGroup = allGroups.find(group => group.title === 'General Projects');
+      if (!generalGroup) {
+        console.warn("⚠️ 'General Projects' group not found.");
+        return res.status(200).json({ message: "General Projects group missing." });
+      }
+
+      const moveItemMutation = `
+        mutation {
+          move_item_to_group (item_id: ${itemId}, group_id: "${generalGroup.id}") {
+            id
+          }
+        }
+      `;
+      await runGraphQLQuery(moveItemMutation);
+      console.log(`📦 Moved item ${itemId} to group ${generalGroup.id}`);
+      return res.status(200).json({ message: 'Show column was empty or N/A. Moved to General Projects.' });
     }
 
-    const groupQuery = `
+    const boardQuery = `
       query {
-        boards(ids: ${boardId}) {
-          groups { id title }
+        items(ids: ${itemId}) {
+          board {
+            id
+            groups {
+              id
+              title
+            }
+          }
         }
       }
     `;
-    const groupData = await runGraphQLQuery(groupQuery);
-    const groups = groupData?.data?.boards?.[0]?.groups || [];
-    let targetGroupId = groups.find(g => g.title === showValue)?.id;
+    const boardData = await runGraphQLQuery(boardQuery);
+    const board = boardData?.data?.items?.[0]?.board;
+    const boardId = board?.id;
+    const allGroups = board?.groups || [];
 
-    if (!targetGroupId) {
-      const createGroupQuery = `
+    const matchingGroup = allGroups.find(group => group.title === newShowValue);
+    let groupId;
+
+    if (matchingGroup) {
+      groupId = matchingGroup.id;
+      console.log(`📁 Group '${newShowValue}' already exists with ID ${groupId}`);
+    } else {
+      const createGroupMutation = `
         mutation {
-          create_group(board_id: ${boardId}, group_name: "${showValue}") { id }
+          create_group(board_id: ${boardId}, group_name: "${newShowValue}") {
+            id
+          }
         }
       `;
-      const createData = await runGraphQLQuery(createGroupQuery);
-      targetGroupId = createData?.data?.create_group?.id;
+      const createGroupData = await runGraphQLQuery(createGroupMutation);
+      groupId = createGroupData?.data?.create_group?.id;
+      console.log(`📂 Created new group '${newShowValue}' with ID ${groupId}`);
     }
 
-    const moveItemQuery = `
+    const moveItemMutation = `
       mutation {
-        move_item_to_group (item_id: ${itemId}, group_id: "${targetGroupId}") { id }
+        move_item_to_group (item_id: ${itemId}, group_id: "${groupId}") {
+          id
+        }
       }
     `;
-    await runGraphQLQuery(moveItemQuery);
+    await runGraphQLQuery(moveItemMutation);
+    console.log(`📦 Moved item ${itemId} to group ${groupId}`);
 
-    if (targetGroupId !== GENERAL_PROJECTS_GROUP_ID) {
-      await assignJobNumber(itemId, boardId, targetGroupId);
-    }
+    // Get the next job number for this group and assign it to the item
+    const nextJobNumber = await getNextJobNumber(boardId, groupId);
+    await setJobNumber(boardId, itemId, nextJobNumber);
+    console.log(`🔢 Assigned Job Number ${nextJobNumber} to item ${itemId}`);
+
+    return res.status(200).json({ message: 'Show column update detected and Job Number assigned.' });
   }
-}
 
-export default async function handler(req, res) {
-  const payload = await json(req);
-  console.log("📦 Webhook Payload:", JSON.stringify(payload, null, 2));
-  if (payload.challenge) return res.status(200).json({ challenge: payload.challenge });
-  res.status(200).json({ message: 'Webhook received. Processing async.' });
-  handleWebhookLogic(payload.event).catch((err) => {
-    console.error("❌ Error in async processing:", err);
-  });
+  console.log("🔕 Ignored event type or column.");
+  return res.status(200).json({ message: 'Event ignored.' });
 }
