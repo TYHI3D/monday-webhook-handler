@@ -29,9 +29,10 @@ const WORK_TYPE_TEAM_MAP = {
 
 const TEAM_COLUMN_ID = "person";
 const TIMELINE_COLUMN_ID = "timerange_mkp86nae";
-const DEADLINE_COLUMN_ID = "date_mkpb5r4t"; // ✅ Fixed incorrect ID
-const JOB_NUMBER_COLUMN_ID = "numbers"; // Update with actual ID if different
-const GENERAL_PROJECTS_GROUP_ID = "new_group29179"; // Replace with your actual General Projects group ID
+const DEADLINE_COLUMN_ID = "date_mkpb5r4t";
+const JOB_NUMBER_COLUMN_ID = "numbers";
+const GENERAL_PROJECTS_GROUP_ID = "new_group29179"; // ID of the General Projects group
+const SHOW_COLUMN_ID = "dropdown_mkp87fs0";
 
 async function runGraphQLQuery(query) {
   const response = await fetch(MONDAY_API_URL, {
@@ -95,7 +96,6 @@ async function fetchDeadline(itemId) {
 }
 
 async function assignJobNumber(itemId, groupId, boardId) {
-  // Avoid assigning job number if returning to General Projects
   if (groupId === GENERAL_PROJECTS_GROUP_ID) {
     console.log(`🔁 Skipping job number assignment for General Projects group`);
     return;
@@ -170,7 +170,6 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
     const subitemBoardId = boardIdData?.data?.items?.[0]?.board?.id;
     console.log("🧭 Subitem board ID:", subitemBoardId);
 
-    console.log("📋 Timeline Pre-check:", { subitemId, deadlineText, subitemBoardId });
     if (subitemId && deadlineText && subitemBoardId) {
       const now = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }).split(',')[0].trim().split('/');
       const formattedNow = `${now[2]}-${now[0].padStart(2, '0')}-${now[1].padStart(2, '0')}`;
@@ -222,5 +221,95 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
   }
 }
 
-// Remaining export default handler block remains unchanged
-// Add assignJobNumber call just after item move and before return
+export default async function handler(req, res) {
+  const payload = await json(req);
+  console.log("📦 Webhook Payload:", JSON.stringify(payload, null, 2));
+
+  if (payload.challenge) {
+    return res.status(200).json({ challenge: payload.challenge });
+  }
+
+  const event = payload.event;
+  const itemId = event?.pulseId;
+  const boardId = event?.boardId;
+
+  if (event.type === 'update_column_value' && event.columnTitle === 'Work Types') {
+    const newValues = event.value?.chosenValues || [];
+    const previousValues = event.previousValue?.chosenValues || [];
+    const prevNames = previousValues.map(v => v.name);
+    const addedValues = newValues.filter(v => !prevNames.includes(v.name));
+    console.log("🆕 Added Work Types:", addedValues.map(v => v.name));
+    await createSubitemsAndAssignTeams(itemId, addedValues);
+    return res.status(200).json({ message: 'Processed Work Type changes.' });
+  }
+
+  if (event.type === 'create_pulse') {
+    const workTypes = await fetchWorkTypes(itemId);
+    console.log("🆕 Work Types on new item:", workTypes.map(v => v.name));
+    await createSubitemsAndAssignTeams(itemId, workTypes);
+    return res.status(200).json({ message: 'Processed new item with Work Types.' });
+  }
+
+  if (event.type === 'update_column_value' && event.columnId === SHOW_COLUMN_ID) {
+    const showValue = event.value?.chosenValues?.[0]?.name;
+    console.log("🎭 Detected Show assignment for item", itemId, ":", showValue);
+
+    if (!showValue || showValue === "N/A") {
+      const moveBackQuery = `
+        mutation {
+          move_item_to_group (item_id: ${itemId}, group_id: "${GENERAL_PROJECTS_GROUP_ID}") {
+            id
+          }
+        }
+      `;
+      console.log(`📂 Moving item ${itemId} back to General Projects`);
+      await runGraphQLQuery(moveBackQuery);
+      return res.status(200).json({ message: 'Moved to General Projects (undefined or N/A Show).' });
+    }
+
+    const groupQuery = `
+      query {
+        boards(ids: ${boardId}) {
+          groups {
+            id
+            title
+          }
+        }
+      }
+    `;
+    const groupData = await runGraphQLQuery(groupQuery);
+    const groups = groupData?.data?.boards?.[0]?.groups || [];
+    const matchingGroup = groups.find(g => g.title === showValue);
+
+    let targetGroupId = matchingGroup?.id;
+
+    if (!targetGroupId) {
+      const createGroupQuery = `
+        mutation {
+          create_group(board_id: ${boardId}, group_name: "${showValue}") {
+            id
+          }
+        }
+      `;
+      const createData = await runGraphQLQuery(createGroupQuery);
+      targetGroupId = createData?.data?.create_group?.id;
+      console.log(`📂 Created new group '${showValue}' with ID ${targetGroupId}`);
+    }
+
+    const moveItemQuery = `
+      mutation {
+        move_item_to_group (item_id: ${itemId}, group_id: "${targetGroupId}") {
+          id
+        }
+      }
+    `;
+    await runGraphQLQuery(moveItemQuery);
+    console.log(`📦 Moved item ${itemId} to group ${targetGroupId}`);
+
+    await assignJobNumber(itemId, targetGroupId, boardId);
+    return res.status(200).json({ message: 'Moved item and assigned job number.' });
+  }
+
+  console.log("🔕 Ignored event type or column.");
+  return res.status(200).json({ message: 'Event ignored.' });
+}
