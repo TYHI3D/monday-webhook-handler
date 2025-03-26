@@ -180,10 +180,47 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
   }
 }
 
-// New function to get all items in a group - more efficient approach
+// New function to get all items in a group - with more debugging
 async function fetchItemsInGroup(boardId, groupId) {
-  // Use the Monday API's built-in filtering for items by group_id
-  const query = `
+  // Log the parameters we're using
+  console.log(`🔍 Fetching items for boardId: ${boardId}, groupId: ${groupId}`);
+  
+  // First try to verify the group exists and get its details
+  const groupQuery = `
+    query {
+      boards(ids: ${boardId}) {
+        groups {
+          id
+          title
+          items_count
+        }
+      }
+    }
+  `;
+  
+  const groupData = await runGraphQLQuery(groupQuery);
+  console.log(`🔍 All groups on board:`, JSON.stringify(groupData?.data?.boards?.[0]?.groups, null, 2));
+  
+  // Try a more direct approach that doesn't rely on query_params
+  const directQuery = `
+    query {
+      boards(ids: ${boardId}) {
+        groups(ids: "${groupId}") {
+          items {
+            id
+            name
+          }
+        }
+      }
+    }
+  `;
+  
+  const directData = await runGraphQLQuery(directQuery);
+  const directItems = directData?.data?.boards?.[0]?.groups?.[0]?.items || [];
+  console.log(`🔍 Direct query found ${directItems.length} items`);
+  
+  // Also try the items_page approach
+  const itemsPageQuery = `
     query {
       boards(ids: ${boardId}) {
         items_page(limit: 100, query_params: {group_id: "${groupId}"}) {
@@ -201,15 +238,63 @@ async function fetchItemsInGroup(boardId, groupId) {
     }
   `;
   
-  const data = await runGraphQLQuery(query);
-  const groupItems = data?.data?.boards?.[0]?.items_page?.items || [];
+  const itemsPageData = await runGraphQLQuery(itemsPageQuery);
+  const itemsPageItems = itemsPageData?.data?.boards?.[0]?.items_page?.items || [];
+  console.log(`🔍 items_page query found ${itemsPageItems.length} items`);
   
-  console.log(`🔍 Found ${groupItems.length} items in group ${groupId}`);
-  if (groupItems.length > 0) {
-    console.log("🔍 Group items data sample:", JSON.stringify(groupItems.slice(0, 2), null, 2));
+  // Try a third approach - get all items and check their group_id
+  const allItemsQuery = `
+    query {
+      boards(ids: ${boardId}) {
+        items {
+          id
+          name
+          group {
+            id
+            title
+          }
+        }
+      }
+    }
+  `;
+  
+  const allItemsData = await runGraphQLQuery(allItemsQuery);
+  const allItems = allItemsData?.data?.boards?.[0]?.items || [];
+  const filteredItems = allItems.filter(item => item.group?.id === groupId);
+  console.log(`🔍 Manual filtering found ${filteredItems.length} items in group ${groupId}`);
+  if (filteredItems.length > 0) {
+    console.log(`🔍 Group items sample:`, JSON.stringify(filteredItems.slice(0, 2), null, 2));
   }
   
-  return groupItems;
+  // Get detailed data for items we found
+  const itemsToUse = filteredItems.length > 0 ? filteredItems : 
+                    directItems.length > 0 ? directItems : 
+                    itemsPageItems;
+  
+  if (itemsToUse.length === 0) {
+    console.log(`⚠️ Could not find any items in group ${groupId} using any method!`);
+    return [];
+  }
+  
+  // For the items we found, get their column values
+  const itemIds = itemsToUse.map(item => item.id).join(',');
+  const columnQuery = `
+    query {
+      items(ids: [${itemIds}]) {
+        id
+        name
+        column_values {
+          id
+          text
+          value
+        }
+      }
+    }
+  `;
+  
+  const columnData = await runGraphQLQuery(columnQuery);
+  const itemsWithColumns = columnData?.data?.items || [];
+  return itemsWithColumns;
 }
 
 // New function to determine the next job number for a group
@@ -385,9 +470,9 @@ export default async function handler(req, res) {
     await runGraphQLQuery(moveItemMutation);
     console.log(`📦 Moved item ${itemId} to group ${groupId}`);
 
-    // Add a small delay to ensure the item is fully moved to the group before querying
+    // Add a longer delay to ensure the item is fully moved to the group before querying
     console.log(`⏱️ Waiting for item move to complete before assigning Job Number`);
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Increased to 2 seconds
+    await new Promise(resolve => setTimeout(resolve, 5000)); // Increased to 5 seconds
 
     // Get the next job number for this group and assign it to the item
     const nextJobNumber = await getNextJobNumber(boardId, groupId);
