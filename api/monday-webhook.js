@@ -189,7 +189,8 @@ async function fetchItemsInGroup(boardId, groupId) {
           items {
             id
             name
-            column_values(ids: "${JOB_NUMBER_COLUMN_ID}") {
+            column_values {
+              id
               text
               value
             }
@@ -199,6 +200,7 @@ async function fetchItemsInGroup(boardId, groupId) {
     }
   `;
   const data = await runGraphQLQuery(query);
+  console.log("🔍 Group items data:", JSON.stringify(data?.data?.boards?.[0]?.groups?.[0]?.items || [], null, 2));
   return data?.data?.boards?.[0]?.groups?.[0]?.items || [];
 }
 
@@ -208,25 +210,37 @@ async function getNextJobNumber(boardId, groupId) {
   
   // If no items exist in the group, start with 1
   if (!items || items.length === 0) {
+    console.log("📊 No existing items in group - starting with Job Number 1");
     return 1;
   }
   
+  console.log(`📊 Found ${items.length} items in the group`);
+  
   // Extract job numbers from all items in the group
   const jobNumbers = items.map(item => {
-    const jobNumberText = item.column_values[0]?.text;
+    // Find the job number column among all columns
+    const jobNumberColumn = item.column_values.find(col => col.id === JOB_NUMBER_COLUMN_ID);
+    const jobNumberText = jobNumberColumn?.text;
+    
     // Parse the job number as an integer, default to 0 if not a valid number
-    return jobNumberText ? parseInt(jobNumberText, 10) || 0 : 0;
+    const parsedNumber = jobNumberText ? parseInt(jobNumberText, 10) || 0 : 0;
+    console.log(`📊 Item ${item.id}: Job Number = ${parsedNumber}`);
+    return parsedNumber;
   });
   
   // Find the highest job number
   const highestJobNumber = Math.max(...jobNumbers, 0);
+  console.log(`📊 Highest existing Job Number: ${highestJobNumber}`);
   
   // Return the next job number
-  return highestJobNumber + 1;
+  const nextJobNumber = highestJobNumber + 1;
+  console.log(`📊 Next Job Number will be: ${nextJobNumber}`);
+  return nextJobNumber;
 }
 
 // New function to set the job number for an item
 async function setJobNumber(boardId, itemId, jobNumber) {
+  // For number columns, we need to format it correctly
   const jobNumberValue = JSON.stringify(jobNumber.toString());
   
   const mutation = `
@@ -244,6 +258,7 @@ async function setJobNumber(boardId, itemId, jobNumber) {
   
   console.log(`🔢 Setting Job Number to ${jobNumber} for item ${itemId}`);
   const result = await runGraphQLQuery(mutation);
+  console.log(`🔢 Job Number update result:`, JSON.stringify(result, null, 2));
   return result;
 }
 
@@ -361,6 +376,10 @@ export default async function handler(req, res) {
     `;
     await runGraphQLQuery(moveItemMutation);
     console.log(`📦 Moved item ${itemId} to group ${groupId}`);
+
+    // Add a small delay to ensure the item is fully moved to the group before querying
+    console.log(`⏱️ Waiting for item move to complete before assigning Job Number`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Get the next job number for this group and assign it to the item
     const nextJobNumber = await getNextJobNumber(boardId, groupId);
