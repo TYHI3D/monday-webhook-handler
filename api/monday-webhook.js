@@ -1,5 +1,32 @@
 // Function to extract numeric job number from formatted job number text
 function extractJobNumber(formattedJobNumber) {
+  if (!formattedJobNumber) {
+    console.log(`🔍 Empty job number, returning 0`);
+    return 0;
+  }
+  
+  console.log(`🔍 Extracting from: "${formattedJobNumber}"`);
+  
+  // Split the string by colon
+  const parts = formattedJobNumber.split(':');
+  console.log(`🔍 Split parts:`, JSON.stringify(parts));
+  
+  // If we have at least two parts (something before and after the colon)
+  if (parts.length >= 2) {
+    const afterColon = parts[1];
+    console.log(`🔍 Part after colon: "${afterColon}"`);
+    
+    const extracted = parseInt(afterColon, 10);
+    if (!isNaN(extracted)) {
+      console.log(`🔍 Successfully extracted: ${extracted}`);
+      return extracted;
+    }
+  }
+  
+  console.log(`🔍 Extraction failed, returning 0`);
+  return 0;
+}// Function to extract numeric job number from formatted job number text
+function extractJobNumber(formattedJobNumber) {
   console.log(`🔍 [DEBUG] Starting extraction from: "${formattedJobNumber}"`);
   
   if (!formattedJobNumber) {
