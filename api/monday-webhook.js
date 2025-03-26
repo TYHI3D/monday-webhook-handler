@@ -297,8 +297,8 @@ async function getNextJobNumber(boardId, groupId) {
 
 // New function to set the job number for an item with the formatted text
 async function setJobNumber(boardId, itemId, formattedJobNumber) {
-  // For text columns, we need to wrap the value in a JSON string
-  const jobNumberValue = JSON.stringify(formattedJobNumber);
+  // For text columns, we need to format the value correctly as a JSON string for Monday's API
+  const jobNumberValue = JSON.stringify(JSON.stringify(formattedJobNumber));
   
   const mutation = `
     mutation {
@@ -314,6 +314,7 @@ async function setJobNumber(boardId, itemId, formattedJobNumber) {
   `;
   
   console.log(`🔢 Setting formatted Job Number to "${formattedJobNumber}" for item ${itemId}`);
+  console.log(`🔢 Formatted mutation value: ${jobNumberValue}`);
   const result = await runGraphQLQuery(mutation);
   console.log(`🔢 Job Number update result:`, JSON.stringify(result, null, 2));
   return result;
