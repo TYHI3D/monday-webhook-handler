@@ -208,6 +208,63 @@ export default async function handler(req, res) {
     return res.status(200).json({ message: 'Processed new item with Work Types.' });
   }
 
+  if (event.type === 'update_column_value' && event.columnTitle === 'Show') {
+    console.log(`🎭 Detected Show assignment for item ${itemId}:`, event.value);
+    // Begin Show column handling logic
+    const newShowValue = event.value;
+
+    // Step 1: Get board ID of the item
+    const boardQuery = `
+      query {
+        items(ids: ${itemId}) {
+          board {
+            id
+            groups {
+              id
+              title
+            }
+          }
+        }
+      }
+    `;
+    const boardData = await runGraphQLQuery(boardQuery);
+    const board = boardData?.data?.items?.[0]?.board;
+    const boardId = board?.id;
+    const allGroups = board?.groups || [];
+    const matchingGroup = allGroups.find(group => group.title === newShowValue);
+
+    // Step 2: Create the group if it doesn't exist
+    let groupId = matchingGroup?.id;
+    if (!groupId) {
+      const createGroupMutation = `
+        mutation {
+          create_group(board_id: ${boardId}, group_name: "${newShowValue}") {
+            id
+          }
+        }
+      `;
+      const createGroupData = await runGraphQLQuery(createGroupMutation);
+      groupId = createGroupData?.data?.create_group?.id;
+      console.log(`📂 Created new group '${newShowValue}' with ID ${groupId}`);
+    } else {
+      console.log(`📁 Group '${newShowValue}' already exists with ID ${groupId}`);
+    }
+
+    // Step 3: Move the item to the correct group
+    const moveItemMutation = `
+      mutation {
+        move_item_to_group (item_id: ${itemId}, group_id: "${groupId}") {
+          id
+        }
+      }
+    `;
+    const moveItemData = await runGraphQLQuery(moveItemMutation);
+    console.log(`📦 Moved item ${itemId} to group ${groupId}`);
+
+    // Placeholder: logic for assigning Job Number goes here
+    return res.status(200).json({ message: 'Show column update detected.' });
+  }
+
   console.log("🔕 Ignored event type or column.");
   return res.status(200).json({ message: 'Event ignored.' });
 }
