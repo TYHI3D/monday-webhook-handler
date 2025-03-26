@@ -31,7 +31,7 @@ const TEAM_COLUMN_ID = "person";
 const TIMELINE_COLUMN_ID = "timerange_mkp86nae";
 const DEADLINE_COLUMN_ID = "date_mkpb5r4t";
 const JOB_NUMBER_COLUMN_ID = "numbers";
-const GENERAL_PROJECTS_GROUP_ID = "new_group29179"; // ID of the General Projects group
+const GENERAL_PROJECTS_GROUP_ID = "new_group29179";
 const SHOW_COLUMN_ID = "dropdown_mkp87fs0";
 
 async function runGraphQLQuery(query) {
@@ -221,15 +221,7 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
   }
 }
 
-export default async function handler(req, res) {
-  const payload = await json(req);
-  console.log("📦 Webhook Payload:", JSON.stringify(payload, null, 2));
-
-  if (payload.challenge) {
-    return res.status(200).json({ challenge: payload.challenge });
-  }
-
-  const event = payload.event;
+async function handleWebhookLogic(event) {
   const itemId = event?.pulseId;
   const boardId = event?.boardId;
 
@@ -240,14 +232,14 @@ export default async function handler(req, res) {
     const addedValues = newValues.filter(v => !prevNames.includes(v.name));
     console.log("🆕 Added Work Types:", addedValues.map(v => v.name));
     await createSubitemsAndAssignTeams(itemId, addedValues);
-    return res.status(200).json({ message: 'Processed Work Type changes.' });
+    return;
   }
 
   if (event.type === 'create_pulse') {
     const workTypes = await fetchWorkTypes(itemId);
     console.log("🆕 Work Types on new item:", workTypes.map(v => v.name));
     await createSubitemsAndAssignTeams(itemId, workTypes);
-    return res.status(200).json({ message: 'Processed new item with Work Types.' });
+    return;
   }
 
   if (event.type === 'update_column_value' && event.columnId === SHOW_COLUMN_ID) {
@@ -264,7 +256,7 @@ export default async function handler(req, res) {
       `;
       console.log(`📂 Moving item ${itemId} back to General Projects`);
       await runGraphQLQuery(moveBackQuery);
-      return res.status(200).json({ message: 'Moved to General Projects (undefined or N/A Show).' });
+      return;
     }
 
     const groupQuery = `
@@ -307,9 +299,20 @@ export default async function handler(req, res) {
     console.log(`📦 Moved item ${itemId} to group ${targetGroupId}`);
 
     await assignJobNumber(itemId, targetGroupId, boardId);
-    return res.status(200).json({ message: 'Moved item and assigned job number.' });
+  }
+}
+
+export default async function handler(req, res) {
+  const payload = await json(req);
+  console.log("📦 Webhook Payload:", JSON.stringify(payload, null, 2));
+
+  if (payload.challenge) {
+    return res.status(200).json({ challenge: payload.challenge });
   }
 
-  console.log("🔕 Ignored event type or column.");
-  return res.status(200).json({ message: 'Event ignored.' });
+  res.status(200).json({ message: 'Webhook received. Processing async.' });
+
+  handleWebhookLogic(payload.event).catch((err) => {
+    console.error("❌ Error in async processing:", err);
+  });
 }
