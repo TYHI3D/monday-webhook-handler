@@ -180,12 +180,13 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
   }
 }
 
-// New function to get all items in a group
+// New function to get all items in a group - more efficient approach
 async function fetchItemsInGroup(boardId, groupId) {
+  // Use the Monday API's built-in filtering for items by group_id
   const query = `
     query {
       boards(ids: ${boardId}) {
-        groups(ids: "${groupId}") {
+        items_page(limit: 100, query_params: {group_id: "${groupId}"}) {
           items {
             id
             name
@@ -199,9 +200,16 @@ async function fetchItemsInGroup(boardId, groupId) {
       }
     }
   `;
+  
   const data = await runGraphQLQuery(query);
-  console.log("🔍 Group items data:", JSON.stringify(data?.data?.boards?.[0]?.groups?.[0]?.items || [], null, 2));
-  return data?.data?.boards?.[0]?.groups?.[0]?.items || [];
+  const groupItems = data?.data?.boards?.[0]?.items_page?.items || [];
+  
+  console.log(`🔍 Found ${groupItems.length} items in group ${groupId}`);
+  if (groupItems.length > 0) {
+    console.log("🔍 Group items data sample:", JSON.stringify(groupItems.slice(0, 2), null, 2));
+  }
+  
+  return groupItems;
 }
 
 // New function to determine the next job number for a group
@@ -379,7 +387,7 @@ export default async function handler(req, res) {
 
     // Add a small delay to ensure the item is fully moved to the group before querying
     console.log(`⏱️ Waiting for item move to complete before assigning Job Number`);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Increased to 2 seconds
 
     // Get the next job number for this group and assign it to the item
     const nextJobNumber = await getNextJobNumber(boardId, groupId);
