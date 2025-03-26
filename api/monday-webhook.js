@@ -184,19 +184,17 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
 async function fetchItemsInGroup(boardId, groupId) {
   console.log(`🔍 Fetching items for boardId: ${boardId}, groupId: ${groupId}`);
   
-  // Make sure we're sending the group ID without quotes in the query
-  // Monday.com API expects this format
+  // The group ID needs to be passed as a string with proper escaping
   const query = `
     query {
       boards(ids: ${boardId}) {
-        groups(ids: ${groupId}) {
+        groups(ids: "${groupId}") {
           items_page {
             items {
               id
               name
               column_values {
                 id
-                title
                 text
                 value
               }
