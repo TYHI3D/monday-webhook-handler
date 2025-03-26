@@ -1,4 +1,38 @@
-const { json } = require('micro');
+// Function to fetch items in a group using the items_page field on groups
+async function fetchItemsInGroup(boardId, groupId) {
+  console.log(`🔍 Fetching items for boardId: ${boardId}, groupId: ${groupId}`);
+  
+  // The group ID needs to be passed as a string with proper escaping
+  const query = `
+    query {
+      boards(ids: ${boardId}) {
+        groups(ids: "${groupId}") {
+          items_page {
+            items {
+              id
+              name
+              column_values {
+                id
+                text
+                value
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  
+  const data = await runGraphQLQuery(query);
+  const items = data?.data?.boards?.[0]?.groups?.[0]?.items_page?.items || [];
+  
+  console.log(`🔍 Found ${items.length} items in group ${groupId}`);
+  if (items.length > 0) {
+    console.log(`🔍 First item in group:`, JSON.stringify(items[0], null, 2));
+  }
+  
+  return items;
+}const { json } = require('micro');
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 const MONDAY_API_KEY = process.env.MONDAY_API_KEY;
@@ -180,43 +214,27 @@ async function createSubitemsAndAssignTeams(itemId, workTypes) {
   }
 }
 
-// Function to fetch items in a group using the items_page field on groups
-async function fetchItemsInGroup(boardId, groupId) {
-  console.log(`🔍 Fetching items for boardId: ${boardId}, groupId: ${groupId}`);
-  
-  // The group ID needs to be passed as a string with proper escaping
+// Function to check if an item already has a job number
+async function itemHasJobNumber(itemId) {
   const query = `
     query {
-      boards(ids: ${boardId}) {
-        groups(ids: "${groupId}") {
-          items_page {
-            items {
-              id
-              name
-              column_values {
-                id
-                text
-                value
-              }
-            }
-          }
+      items(ids: ${itemId}) {
+        column_values(ids: "${JOB_NUMBER_COLUMN_ID}") {
+          text
+          value
         }
       }
     }
   `;
   
-  console.log(`🔍 Executing query: ${query}`);
   const data = await runGraphQLQuery(query);
-  console.log(`🔍 Query response:`, JSON.stringify(data, null, 2));
+  const jobNumberText = data?.data?.items?.[0]?.column_values?.[0]?.text;
   
-  const items = data?.data?.boards?.[0]?.groups?.[0]?.items_page?.items || [];
+  // If the job number exists and is not empty or zero
+  const hasJobNumber = jobNumberText && jobNumberText.trim() !== '' && jobNumberText !== '0';
+  console.log(`🔍 Checking if item ${itemId} has a Job Number: ${hasJobNumber ? 'Yes - ' + jobNumberText : 'No'}`);
   
-  console.log(`🔍 Found ${items.length} items in group ${groupId}`);
-  if (items.length > 0) {
-    console.log(`🔍 First item in group:`, JSON.stringify(items[0], null, 2));
-  }
-  
-  return items;
+  return hasJobNumber;
 }
 
 // Function to get the next job number for a group
@@ -394,13 +412,20 @@ export default async function handler(req, res) {
     console.log(`📦 Moved item ${itemId} to group ${groupId}`);
 
     // Add a short delay to ensure the item is fully moved to the group before querying
-    console.log(`⏱️ Brief wait for item move to complete before assigning Job Number`);
+    console.log(`⏱️ Brief wait for item move to complete before checking Job Number`);
     await new Promise(resolve => setTimeout(resolve, 1000)); // Reduced to 1 second
-
-    // Get the next job number for this group and assign it to the item
-    const nextJobNumber = await getNextJobNumber(boardId, groupId);
-    await setJobNumber(boardId, itemId, nextJobNumber);
-    console.log(`🔢 Assigned Job Number ${nextJobNumber} to item ${itemId}`);
+    
+    // First check if the item already has a job number
+    const hasExistingJobNumber = await itemHasJobNumber(itemId);
+    
+    if (hasExistingJobNumber) {
+      console.log(`🔢 Item ${itemId} already has a Job Number - keeping existing value`);
+    } else {
+      // Get the next job number for this group and assign it to the item
+      const nextJobNumber = await getNextJobNumber(boardId, groupId);
+      await setJobNumber(boardId, itemId, nextJobNumber);
+      console.log(`🔢 Assigned Job Number ${nextJobNumber} to item ${itemId}`);
+    }
 
     return res.status(200).json({ message: 'Show column update detected and Job Number assigned.' });
   }
