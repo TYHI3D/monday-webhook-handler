@@ -125,7 +125,7 @@ async function assignJobNumber(itemId, groupId, boardId) {
         board_id: ${boardId},
         item_id: ${itemId},
         column_id: "${JOB_NUMBER_COLUMN_ID}",
-        value: "${newJobNumber}"
+        value: ${newJobNumber}
       ) {
         id
       }
