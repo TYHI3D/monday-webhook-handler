@@ -508,10 +508,42 @@ module.exports = async function handler(req, res) {
 
   // Handle new item creation
   if (event.type === 'create_pulse') {
-    const workTypes = await fetchWorkTypes(itemId);
-    console.log("🆕 Work Types on new item:", workTypes.map(v => v.name));
-    await createSubitemsAndAssignTeams(itemId, workTypes);
-    return res.status(200).json({ message: 'Processed new item with Work Types.' });
+    // Get work types directly from the webhook payload instead of making an API call
+    const workTypeValues = event.columnValues?.dropdown_mkp8c97w?.chosenValues || [];
+    console.log("🆕 Work Types on new item (from payload):", workTypeValues.map(v => v.name));
+    
+    // Process the work types
+    await createSubitemsAndAssignTeams(itemId, workTypeValues);
+    
+    // Also handle Show assignment if present in the payload
+    const showValue = event.columnValues?.dropdown_mkp87fs0?.chosenValues?.[0];
+    if (showValue) {
+      console.log(`🎭 New item has Show assignment:`, showValue.name);
+      
+      // Get board info for item
+      const boardQuery = `
+        query {
+          items(ids: ${itemId}) {
+            board {
+              id
+              groups {
+                id
+                title
+              }
+            }
+          }
+        }
+      `;
+      const boardData = await runGraphQLQuery(boardQuery);
+      const board = boardData?.data?.items?.[0]?.board;
+      const boardId = board?.id;
+      const allGroups = board?.groups || [];
+
+      // Handle the Show column value
+      await handleShowColumnChange(itemId, showValue.name, boardId, allGroups);
+    }
+    
+    return res.status(200).json({ message: 'Processed new item with Work Types and Show assignment.' });
   }
 
   // Handle Show column changes
