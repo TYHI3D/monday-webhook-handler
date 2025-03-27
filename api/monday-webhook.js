@@ -21,29 +21,68 @@ async function positionGroups(boardId, groups) {
   // Log the order
   console.log(`📊 Ordered groups: ${sortedGroups.map(g => g.title).join(' → ')}`);
   
-  // Apply the positioning
-  for (let i = 1; i < sortedGroups.length; i++) {
-    const prevGroup = sortedGroups[i-1];
-    const currentGroup = sortedGroups[i];
+  // Apply the positioning - start with "General Projects" at the top
+  const generalProjectsGroup = sortedGroups.find(g => g.title === "General Projects");
+  
+  if (generalProjectsGroup) {
+    // First, move General Projects to top
+    console.log(`📊 Moving 'General Projects' to the top`);
     
-    // Skip if either group is undefined
-    if (!prevGroup || !currentGroup) continue;
-    
-    console.log(`📊 Positioning '${currentGroup.title}' after '${prevGroup.title}'`);
-    
-    const positionMutation = `
+    const topPositionMutation = `
       mutation {
         position_group_after(
           board_id: ${boardId}, 
-          group_id: "${currentGroup.id}", 
-          after_group_id: "${prevGroup.id}"
+          group_id: "${generalProjectsGroup.id}", 
+          after_group_id: null
         ) {
           id
         }
       }
     `;
     
-    await runGraphQLQuery(positionMutation);
+    try {
+      await runGraphQLQuery(topPositionMutation);
+      // Add a short delay to allow the position change to take effect
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } catch (error) {
+      console.log(`⚠️ Error positioning General Projects: ${error.message}`);
+    }
+  }
+  
+  // Get show groups only (exclude General Projects) and ensure they're in numeric order
+  const showGroups = sortedGroups.filter(g => g.title !== "General Projects");
+  
+  // Position each subsequent group with a delay between operations
+  let previousGroup = generalProjectsGroup || null;
+  
+  for (const currentGroup of showGroups) {
+    if (!previousGroup || !currentGroup) {
+      previousGroup = currentGroup;
+      continue;
+    }
+    
+    console.log(`📊 Positioning '${currentGroup.title}' after '${previousGroup.title}'`);
+    
+    const positionMutation = `
+      mutation {
+        position_group_after(
+          board_id: ${boardId}, 
+          group_id: "${currentGroup.id}", 
+          after_group_id: "${previousGroup.id}"
+        ) {
+          id
+        }
+      }
+    `;
+    
+    try {
+      await runGraphQLQuery(positionMutation);
+      // Add a short delay to allow the position change to take effect
+      await new Promise(resolve => setTimeout(resolve, 500));
+      previousGroup = currentGroup;
+    } catch (error) {
+      console.log(`⚠️ Error positioning ${currentGroup.title}: ${error.message}`);
+    }
   }
 }/**
  * Extract show number as string from a show name (e.g., "19 - Dakota" -> "19")
@@ -574,8 +613,26 @@ async function createGroup(boardId, groupName, allGroups) {
   
   console.log(`📂 Created group '${groupName}' with ID ${newGroupId}`);
   
+  // Get the current groups on the board again to make sure we have the latest
+  const boardQuery = `
+    query {
+      boards(ids: ${boardId}) {
+        groups {
+          id
+          title
+        }
+      }
+    }
+  `;
+  const boardData = await runGraphQLQuery(boardQuery);
+  const refreshedGroups = boardData?.data?.boards?.[0]?.groups || [];
+  
+  // Wait a moment before trying to position
+  console.log(`⏱️ Waiting briefly before positioning groups`);
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
   // After creating, reposition the group
-  await positionGroups(boardId, [...allGroups, { id: newGroupId, title: groupName }]);
+  await positionGroups(boardId, refreshedGroups);
   
   return newGroupId;
 }
@@ -675,6 +732,29 @@ module.exports = async function handler(req, res) {
 
     // Handle the Show column change
     const result = await handleShowColumnChange(itemId, newShowValue, boardId, allGroups);
+    
+    // After handling the show column change, force a second reordering with a delay
+    console.log(`⏱️ Waiting before final group reordering`);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Get fresh groups data
+    const refreshBoardQuery = `
+      query {
+        boards(ids: ${boardId}) {
+          groups {
+            id
+            title
+          }
+        }
+      }
+    `;
+    const refreshData = await runGraphQLQuery(refreshBoardQuery);
+    const refreshedGroups = refreshData?.data?.boards?.[0]?.groups || [];
+    
+    // Final reordering
+    console.log(`📊 Performing final group reordering`);
+    await positionGroups(boardId, refreshedGroups);
+    
     return res.status(200).json({ message: result.message });
   }
 
