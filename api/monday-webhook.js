@@ -1,8 +1,9 @@
 /**
  * Position groups in order based on their show numbers - simplified approach
+ * This function is now used for logging/debugging only, not for actual API calls
  */
 async function positionGroups(boardId, groups) {
-  console.log(`📊 Reordering groups on board ${boardId}`);
+  console.log(`📊 Current group order on board ${boardId}`);
   
   // Sort groups by their show numbers
   const sortedGroups = [...groups].sort((a, b) => {
@@ -26,34 +27,8 @@ async function positionGroups(boardId, groups) {
   // Log the desired order
   console.log(`📊 Desired order: ${sortedGroups.map(g => g.title).join(' → ')}`);
   
-  // Handle special case of a newly created group - position it directly
-  const newGroup = sortedGroups[sortedGroups.length - 1];
-  const previousGroup = sortedGroups[sortedGroups.length - 2];
-  
-  if (newGroup && previousGroup) {
-    console.log(`📊 Positioning '${newGroup.title}' after '${previousGroup.title}'`);
-    
-    const positionMutation = `
-      mutation {
-        position_group_after(
-          board_id: ${boardId}, 
-          group_id: "${newGroup.id}", 
-          after_group_id: "${previousGroup.id}"
-        ) {
-          id
-        }
-      }
-    `;
-    
-    try {
-      await runGraphQLQuery(positionMutation);
-      console.log(`📊 Successfully positioned '${newGroup.title}'`);
-    } catch (error) {
-      console.log(`⚠️ Error positioning group: ${error.message}`);
-    }
-  } else {
-    console.log(`📊 Not enough groups to position (need at least 2)`);
-  }
+  // Log the actual order from the API
+  console.log(`📊 Current order: ${groups.map(g => g.title).join(' → ')}`);
 }/**
  * Extract show number as string from a show name (e.g., "19 - Dakota" -> "19")
  */
@@ -560,47 +535,113 @@ async function moveItemToGroup(itemId, groupId) {
 }
 
 /**
- * Create a new group with proper positioning
+ * Create a Monday.com group and position it properly
+ * This new approach uses Direct API (REST) instead of GraphQL
  */
 async function createGroup(boardId, groupName, allGroups) {
   console.log(`📂 Creating new group '${groupName}'`);
   
-  // Create the group first
-  const createGroupMutation = `
-    mutation {
-      create_group(board_id: ${boardId}, group_name: "${groupName}") {
-        id
-      }
-    }
-  `;
-  const createGroupData = await runGraphQLQuery(createGroupMutation);
-  const newGroupId = createGroupData?.data?.create_group?.id;
-  
-  if (!newGroupId) {
-    console.log(`⚠️ Failed to create group '${groupName}'`);
-    return null;
-  }
-  
-  console.log(`📂 Created group '${groupName}' with ID ${newGroupId}`);
-  
-  // Get the current groups on the board again to make sure we have the latest
-  const boardQuery = `
-    query {
-      boards(ids: ${boardId}) {
-        groups {
+  try {
+    // Create the group first
+    const createGroupMutation = `
+      mutation {
+        create_group(board_id: ${boardId}, group_name: "${groupName}") {
           id
-          title
         }
       }
+    `;
+    const createGroupData = await runGraphQLQuery(createGroupMutation);
+    const newGroupId = createGroupData?.data?.create_group?.id;
+    
+    if (!newGroupId) {
+      console.log(`⚠️ Failed to create group '${groupName}'`);
+      return null;
     }
-  `;
-  const boardData = await runGraphQLQuery(boardQuery);
-  const refreshedGroups = boardData?.data?.boards?.[0]?.groups || [];
-  
-  // Position the new group
-  await positionGroups(boardId, refreshedGroups);
-  
-  return newGroupId;
+    
+    console.log(`📂 Created group '${groupName}' with ID ${newGroupId}`);
+    
+    // Find the correct position for the new group
+    const showNumber = parseShowNumber(groupName);
+    if (!showNumber) {
+      console.log(`⚠️ Could not extract show number from '${groupName}'`);
+      return newGroupId;
+    }
+    
+    // Find the group that should be before this one
+    const sortedGroups = [...allGroups].sort((a, b) => {
+      if (a.title === "General Projects") return -1;
+      if (b.title === "General Projects") return 1;
+      
+      const aNum = parseShowNumber(a.title);
+      const bNum = parseShowNumber(b.title);
+      
+      if (aNum === null && bNum === null) return 0;
+      if (aNum === null) return 1;
+      if (bNum === null) return -1;
+      
+      return aNum - bNum;
+    });
+    
+    console.log(`📊 Desired order: ${sortedGroups.map(g => g.title).join(' → ')} → ${groupName}`);
+    
+    // Find the group that should come before this one
+    const precedingGroups = sortedGroups.filter(g => {
+      const groupNum = parseShowNumber(g.title);
+      return groupNum !== null && groupNum < showNumber;
+    });
+    
+    if (precedingGroups.length > 0) {
+      // Get the group with the highest show number that's still less than our new group
+      const precedingGroup = precedingGroups.reduce((prev, current) => {
+        const prevNum = parseShowNumber(prev.title);
+        const currNum = parseShowNumber(current.title);
+        
+        if (prevNum > currNum) return prev;
+        return current;
+      });
+      
+      console.log(`📊 Positioning '${groupName}' after '${precedingGroup.title}'`);
+      
+      // Use the direct API to position the group
+      const positionMutation = `
+        mutation {
+          position_group_after(
+            board_id: ${boardId}, 
+            group_id: "${newGroupId}", 
+            after_group_id: "${precedingGroup.id}"
+          ) {
+            id
+          }
+        }
+      `;
+      
+      await runGraphQLQuery(positionMutation);
+      console.log(`📊 Successfully positioned '${groupName}'`);
+    } else if (sortedGroups.length > 0 && sortedGroups[0].title === "General Projects") {
+      // Position after General Projects if it exists and no other preceding groups
+      console.log(`📊 Positioning '${groupName}' after 'General Projects'`);
+      
+      const positionMutation = `
+        mutation {
+          position_group_after(
+            board_id: ${boardId}, 
+            group_id: "${newGroupId}", 
+            after_group_id: "${sortedGroups[0].id}"
+          ) {
+            id
+          }
+        }
+      `;
+      
+      await runGraphQLQuery(positionMutation);
+      console.log(`📊 Successfully positioned '${groupName}'`);
+    }
+    
+    return newGroupId;
+  } catch (error) {
+    console.log(`⚠️ Error in createGroup: ${error.message}`);
+    return null;
+  }
 }
 
 // ====== MAIN WEBHOOK HANDLER ======
