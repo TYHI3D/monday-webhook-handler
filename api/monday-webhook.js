@@ -1,4 +1,62 @@
-const { json } = require('micro');
+/**
+ * Position groups in order based on their show numbers
+ */
+async function positionGroups(boardId, groups) {
+  console.log(`📊 Reordering ${groups.length} groups on board ${boardId}`);
+  
+  // Sort groups by their show numbers
+  const sortedGroups = [...groups].sort((a, b) => {
+    const aNum = parseShowNumber(a.title);
+    const bNum = parseShowNumber(b.title);
+    
+    // Handle null cases
+    if (aNum === null && bNum === null) return 0;
+    if (aNum === null) return 1;  // Null show numbers go at the bottom
+    if (bNum === null) return -1;
+    
+    // Normal numeric comparison
+    return aNum - bNum;
+  });
+  
+  // Log the order
+  console.log(`📊 Ordered groups: ${sortedGroups.map(g => g.title).join(' → ')}`);
+  
+  // Apply the positioning
+  for (let i = 1; i < sortedGroups.length; i++) {
+    const prevGroup = sortedGroups[i-1];
+    const currentGroup = sortedGroups[i];
+    
+    // Skip if either group is undefined
+    if (!prevGroup || !currentGroup) continue;
+    
+    console.log(`📊 Positioning '${currentGroup.title}' after '${prevGroup.title}'`);
+    
+    const positionMutation = `
+      mutation {
+        position_group_after(
+          board_id: ${boardId}, 
+          group_id: "${currentGroup.id}", 
+          after_group_id: "${prevGroup.id}"
+        ) {
+          id
+        }
+      }
+    `;
+    
+    await runGraphQLQuery(positionMutation);
+  }
+}/**
+ * Extract show number as string from a show name (e.g., "19 - Dakota" -> "19")
+ */
+function extractShowNumber(showName) {
+  if (!showName) return null;
+  
+  const match = showName.match(/^(\d+)\s*-/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  return null;
+}const { json } = require('micro');
 
 // ====== CONFIGURATION ======
 const MONDAY_API_URL = 'https://api.monday.com/v2';
@@ -279,14 +337,21 @@ async function assignTeamsToSubitem(subitemId, boardId, workTypeName) {
 // ====== JOB NUMBER FUNCTIONS ======
 
 /**
- * Extract show number from a show name (e.g., "19 - Dakota" -> "19")
+ * Parse show number from a show name
+ * Returns the numeric part as a number (e.g., "19 - Dakota" returns 19)
  */
-function extractShowNumber(showName) {
+function parseShowNumber(showName) {
   if (!showName) return null;
   
+  // For "General Projects", return a special low value to keep it at the top
+  if (showName === "General Projects") {
+    return -1;
+  }
+  
+  // Extract the number prefix from strings like "19 - Dakota" or "123 - Project Name"
   const match = showName.match(/^(\d+)\s*-/);
   if (match && match[1]) {
-    return match[1];
+    return parseInt(match[1], 10);
   }
   return null;
 }
@@ -417,8 +482,28 @@ async function handleShowColumnChange(itemId, newShowValue, boardId, allGroups) 
     groupId = matchingGroup.id;
     console.log(`📁 Group '${newShowValue}' already exists with ID ${groupId}`);
   } else {
-    groupId = await createGroup(boardId, newShowValue);
+    groupId = await createGroup(boardId, newShowValue, allGroups);
+    if (!groupId) {
+      return { success: false, message: `Failed to create group for '${newShowValue}'` };
+    }
     console.log(`📂 Created new group '${newShowValue}' with ID ${groupId}`);
+    
+    // Refresh all groups after creating a new one
+    const boardQuery = `
+      query {
+        boards(ids: ${boardId}) {
+          groups {
+            id
+            title
+          }
+        }
+      }
+    `;
+    const boardData = await runGraphQLQuery(boardQuery);
+    const refreshedGroups = boardData?.data?.boards?.[0]?.groups || [];
+    
+    // Apply positioning to all groups
+    await positionGroups(boardId, refreshedGroups);
   }
 
   // Move item to the group
@@ -466,9 +551,12 @@ async function moveItemToGroup(itemId, groupId) {
 }
 
 /**
- * Create a new group
+ * Create a new group with proper positioning
  */
-async function createGroup(boardId, groupName) {
+async function createGroup(boardId, groupName, allGroups) {
+  console.log(`📂 Creating new group '${groupName}'`);
+  
+  // Create the group first
   const createGroupMutation = `
     mutation {
       create_group(board_id: ${boardId}, group_name: "${groupName}") {
@@ -477,7 +565,19 @@ async function createGroup(boardId, groupName) {
     }
   `;
   const createGroupData = await runGraphQLQuery(createGroupMutation);
-  return createGroupData?.data?.create_group?.id;
+  const newGroupId = createGroupData?.data?.create_group?.id;
+  
+  if (!newGroupId) {
+    console.log(`⚠️ Failed to create group '${groupName}'`);
+    return null;
+  }
+  
+  console.log(`📂 Created group '${groupName}' with ID ${newGroupId}`);
+  
+  // After creating, reposition the group
+  await positionGroups(boardId, [...allGroups, { id: newGroupId, title: groupName }]);
+  
+  return newGroupId;
 }
 
 // ====== MAIN WEBHOOK HANDLER ======
@@ -541,6 +641,9 @@ module.exports = async function handler(req, res) {
 
       // Handle the Show column value
       await handleShowColumnChange(itemId, showValue.name, boardId, allGroups);
+      
+      // Reposition groups if needed
+      await positionGroups(boardId, allGroups);
     }
     
     return res.status(200).json({ message: 'Processed new item with Work Types and Show assignment.' });
