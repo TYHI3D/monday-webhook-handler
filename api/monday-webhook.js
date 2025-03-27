@@ -35,6 +35,8 @@ const WORK_TYPE_TEAM_MAP = {
   "Molding & Casting": [TEAM_IDS.MOLD_DEPARTMENT],
   "Rendering": [TEAM_IDS.DESIGN],
   "Repair / Refinishing": [TEAM_IDS.ART_DEPARTMENT],
+  "3D Scanning": [TEAM_IDS.DESIGN],
+  "Crating / Shipping": [TEAM_IDS.FABRICATION],
 };
 
 // ====== MONDAY.COM API FUNCTIONS ======
