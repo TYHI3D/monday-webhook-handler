@@ -292,6 +292,26 @@ function extractShowNumber(showName) {
 }
 
 /**
+ * Parse show number from a show name as a numeric value
+ * Returns the numeric part as a number (e.g., "19 - Dakota" returns 19)
+ */
+function parseShowNumber(showName) {
+  if (!showName) return null;
+  
+  // For "General Projects", return a special low value to keep it at the top
+  if (showName === "General Projects") {
+    return -1;
+  }
+  
+  // Extract the number prefix from strings like "19 - Dakota" or "123 - Project Name"
+  const match = showName.match(/^(\d+)\s*-/);
+  if (match && match[1]) {
+    return parseInt(match[1], 10);
+  }
+  return null;
+}
+
+/**
  * Format a job number with show prefix (e.g., 19, 2 -> "19:2")
  */
 function formatJobNumber(showNumber, jobNumber) {
@@ -394,6 +414,124 @@ async function setJobNumber(boardId, itemId, formattedJobNumber) {
 }
 
 /**
+ * Create a new group with proper positioning
+ */
+async function createGroup(boardId, groupName, allGroups) {
+  console.log(`📂 Creating new group '${groupName}'`);
+  
+  // Parse the show number to determine positioning
+  const showNumber = parseShowNumber(groupName);
+  if (!showNumber) {
+    console.log(`⚠️ Could not extract show number from '${groupName}'`);
+    
+    // Create group without positioning if we can't parse a show number
+    const createGroupMutation = `
+      mutation {
+        create_group(board_id: ${boardId}, group_name: "${groupName}") {
+          id
+        }
+      }
+    `;
+    const createGroupData = await runGraphQLQuery(createGroupMutation);
+    return createGroupData?.data?.create_group?.id;
+  }
+  
+  // Sort existing groups to find where this one should go
+  const sortedGroups = [...allGroups].sort((a, b) => {
+    // Special case for "General Projects" - always at the top
+    if (a.title === "General Projects") return -1;
+    if (b.title === "General Projects") return 1;
+    
+    // Extract show numbers
+    const aNum = parseShowNumber(a.title);
+    const bNum = parseShowNumber(b.title);
+    
+    // Handle null cases
+    if (aNum === null && bNum === null) return 0;
+    if (aNum === null) return 1;
+    if (bNum === null) return -1;
+    
+    // Normal numeric comparison
+    return aNum - bNum;
+  });
+  
+  // Find the group with the highest show number that's less than our new one
+  const precedingGroups = sortedGroups.filter(g => {
+    const groupNum = parseShowNumber(g.title);
+    return groupNum !== null && groupNum < showNumber;
+  });
+  
+  let relativeToGroup = null;
+  if (precedingGroups.length > 0) {
+    // Get the group with the highest show number that's still less than our new group
+    relativeToGroup = precedingGroups.reduce((prev, current) => {
+      const prevNum = parseShowNumber(prev.title);
+      const currNum = parseShowNumber(current.title);
+      
+      if (prevNum > currNum) return prev;
+      return current;
+    });
+  }
+  
+  let createGroupMutation;
+  if (relativeToGroup) {
+    console.log(`📂 Creating group '${groupName}' after '${relativeToGroup.title}'`);
+    
+    // Create group positioned after the preceding group
+    createGroupMutation = `
+      mutation {
+        create_group(
+          board_id: ${boardId}, 
+          group_name: "${groupName}", 
+          relative_to: "${relativeToGroup.id}",
+          position_relative_method: after_at
+        ) {
+          id
+        }
+      }
+    `;
+  } else if (sortedGroups.length > 0 && sortedGroups[0].title === "General Projects") {
+    console.log(`📂 Creating group '${groupName}' after 'General Projects'`);
+    
+    // Create group positioned after General Projects
+    createGroupMutation = `
+      mutation {
+        create_group(
+          board_id: ${boardId}, 
+          group_name: "${groupName}", 
+          relative_to: "${sortedGroups[0].id}",
+          position_relative_method: after_at
+        ) {
+          id
+        }
+      }
+    `;
+  } else {
+    console.log(`📂 Creating group '${groupName}' without positioning`);
+    
+    // Create group without positioning if no reference groups found
+    createGroupMutation = `
+      mutation {
+        create_group(board_id: ${boardId}, group_name: "${groupName}") {
+          id
+        }
+      }
+    `;
+  }
+  
+  const createGroupData = await runGraphQLQuery(createGroupMutation);
+  const newGroupId = createGroupData?.data?.create_group?.id;
+  
+  if (!newGroupId) {
+    console.log(`⚠️ Failed to create group '${groupName}'`);
+    return null;
+  }
+  
+  console.log(`📂 Created group '${groupName}' with ID ${newGroupId}`);
+  return newGroupId;
+}
+
+/**
  * Handle item movement based on Show column changes
  */
 async function handleShowColumnChange(itemId, newShowValue, boardId, allGroups) {
@@ -417,7 +555,10 @@ async function handleShowColumnChange(itemId, newShowValue, boardId, allGroups) 
     groupId = matchingGroup.id;
     console.log(`📁 Group '${newShowValue}' already exists with ID ${groupId}`);
   } else {
-    groupId = await createGroup(boardId, newShowValue);
+    groupId = await createGroup(boardId, newShowValue, allGroups);
+    if (!groupId) {
+      return { success: false, message: `Failed to create group for '${newShowValue}'` };
+    }
     console.log(`📂 Created new group '${newShowValue}' with ID ${groupId}`);
   }
 
@@ -463,21 +604,6 @@ async function moveItemToGroup(itemId, groupId) {
   `;
   await runGraphQLQuery(moveItemMutation);
   console.log(`📦 Moved item ${itemId} to group ${groupId}`);
-}
-
-/**
- * Create a new group
- */
-async function createGroup(boardId, groupName) {
-  const createGroupMutation = `
-    mutation {
-      create_group(board_id: ${boardId}, group_name: "${groupName}") {
-        id
-      }
-    }
-  `;
-  const createGroupData = await runGraphQLQuery(createGroupMutation);
-  return createGroupData?.data?.create_group?.id;
 }
 
 // ====== MAIN WEBHOOK HANDLER ======
