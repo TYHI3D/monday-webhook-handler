@@ -39,7 +39,7 @@ module.exports = async function handler(req, res) {
     // ✅ Only run contact matching logic for the Web Form Raw Intake board
     if (boardId === 8826296878) {
       const email = event.columnValues?.email_mkpkkkje?.text || '';
-      const name = event.columnValues?.text_mkpkzg16?.text || '';
+      const name = event.columnValues?.text_mkpkzg16?.value || ''; // ← Fixed here
       console.log("📧 Extracted Email:", email);
       console.log("🙋 Extracted Name:", name);
 
@@ -49,9 +49,12 @@ module.exports = async function handler(req, res) {
       // TODO: if contactId is null, create one — coming next
     }
 
-    const workTypeValues = event.columnValues?.dropdown_mkp8c97w?.chosenValues || [];
-    console.log("🆕 Work Types on new item:", workTypeValues.map(v => v.name));
-    await createSubitemsAndAssignTeams(itemId, workTypeValues);
+    // ✅ Only run Work Types logic on Projects board
+    if (boardId === 7108984735) {
+      const workTypeValues = event.columnValues?.dropdown_mkp8c97w?.chosenValues || [];
+      console.log("🆕 Work Types on new item:", workTypeValues.map(v => v.name));
+      await createSubitemsAndAssignTeams(itemId, workTypeValues);
+    }
 
     const showValue = event.columnValues?.dropdown_mkp87fs0?.chosenValues?.[0];
     if (showValue) {
