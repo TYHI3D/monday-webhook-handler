@@ -14,8 +14,10 @@ const {
   findMatchingContact,
   createContact,
   createProjectIntakeItem,
-  markWebFormItemProcessed
+  markWebFormItemProcessed,
+  linkProjectToContact
 } = require('../lib/monday');
+
 const { runGraphQLQuery } = require('../lib/graphql');
 
 module.exports = async function handler(req, res) {
@@ -75,6 +77,8 @@ module.exports = async function handler(req, res) {
       }, contactId);
 
       console.log("📝 Created Project Intake Item:", projectId);
+      await linkProjectToContact(contactId, projectId);
+      console.log("🔗 Linked project back to contact.");
 
       await markWebFormItemProcessed(itemId);
       console.log("✅ Marked Web Form item as processed.");
