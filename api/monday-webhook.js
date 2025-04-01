@@ -39,14 +39,21 @@ module.exports = async function handler(req, res) {
     // ✅ Only run contact matching logic for the Web Form Raw Intake board
     if (boardId === 8826296878) {
       const email = event.columnValues?.email_mkpkkkje?.text || '';
-      const name = event.columnValues?.text_mkpkzg16?.value || ''; // ← Fixed here
+      const name = event.columnValues?.text_mkpkzg16?.value || '';
       console.log("📧 Extracted Email:", email);
       console.log("🙋 Extracted Name:", name);
 
-      const { findMatchingContact } = require('../lib/monday');
+      const { findMatchingContact, createContact } = require('../lib/monday');
       const contactId = await findMatchingContact(email, name);
       console.log("🔗 Matched Contact ID:", contactId || '(none found)');
-      // TODO: if contactId is null, create one — coming next
+
+      let finalContactId = contactId;
+      if (!finalContactId) {
+        const phone = event.columnValues?.phone_mkpkcdr8?.phone || '';
+        const company = event.columnValues?.text7?.text || '';
+        finalContactId = await createContact(name, email, phone, company);
+        console.log("✨ Created new Contact ID:", finalContactId);
+      }
     }
 
     // ✅ Only run Work Types logic on Projects board
