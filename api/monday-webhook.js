@@ -7,7 +7,15 @@ const {
   formatJobNumber,
   getNextJobNumber
 } = require('../lib/logic');
-const { itemHasJobNumber, setJobNumber, fetchItemsInGroup } = require('../lib/monday');
+const {
+  itemHasJobNumber,
+  setJobNumber,
+  fetchItemsInGroup,
+  findMatchingContact,
+  createContact,
+  createProjectIntakeItem,
+  markWebFormItemProcessed
+} = require('../lib/monday');
 const { runGraphQLQuery } = require('../lib/graphql');
 
 module.exports = async function handler(req, res) {
@@ -36,27 +44,43 @@ module.exports = async function handler(req, res) {
 
   // Handle new item creation
   if (event.type === 'create_pulse') {
-    // ✅ Only run contact matching logic for the Web Form Raw Intake board
+    // ✅ Only process Web Form board items
     if (boardId === 8826296878) {
       const email = event.columnValues?.email_mkpkkkje?.text || '';
       const name = event.columnValues?.text_mkpkzg16?.value || '';
       console.log("📧 Extracted Email:", email);
       console.log("🙋 Extracted Name:", name);
 
-      const { findMatchingContact, createContact } = require('../lib/monday');
-      const contactId = await findMatchingContact(email, name);
+      let contactId = await findMatchingContact(email, name);
       console.log("🔗 Matched Contact ID:", contactId || '(none found)');
 
-      let finalContactId = contactId;
-      if (!finalContactId) {
+      if (!contactId) {
         const phone = event.columnValues?.phone_mkpkcdr8?.phone || '';
         const company = event.columnValues?.text7?.text || '';
-        finalContactId = await createContact(name, email, phone, company);
-        console.log("✨ Created new Contact ID:", finalContactId);
+        contactId = await createContact(name, email, phone, company);
+        console.log("✨ Created new Contact ID:", contactId);
       }
+
+      const workTypes = event.columnValues?.dropdown_mkpkpc18?.chosenValues?.map(v => v.name) || [];
+      const materials = event.columnValues?.color_mkpk6mvd?.label?.text || '';
+      const deadline = event.columnValues?.date_mkpkmcjn?.date || '';
+      const extraInfo = event.columnValues?.long_text_mkpkz47?.text || '';
+
+      const projectId = await createProjectIntakeItem({
+        name: event.pulseName,
+        workTypes,
+        materials,
+        deadline,
+        extraInfo
+      }, contactId);
+
+      console.log("📝 Created Project Intake Item:", projectId);
+
+      await markWebFormItemProcessed(itemId);
+      console.log("✅ Marked Web Form item as processed.");
     }
 
-    // ✅ Only run Work Types logic on Projects board
+    // Only run Work Types logic on the Projects board
     if (boardId === 7108984735) {
       const workTypeValues = event.columnValues?.dropdown_mkp8c97w?.chosenValues || [];
       console.log("🆕 Work Types on new item:", workTypeValues.map(v => v.name));
@@ -89,7 +113,7 @@ module.exports = async function handler(req, res) {
       await handleShowColumnChange(itemId, showValue.name, fullBoardId, allGroups);
     }
 
-    return res.status(200).json({ message: 'Processed new item with Work Types and Show assignment.' });
+    return res.status(200).json({ message: 'Processed new item with contact, intake, and optional show assignment.' });
   }
 
   // Handle Show column changes
