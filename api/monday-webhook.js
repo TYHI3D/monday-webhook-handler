@@ -15,9 +15,10 @@ const {
   createContact,
   createProjectIntakeItem,
   markWebFormItemProcessed,
-  linkProjectToContact
+  linkProjectToContact,
+  extractWebFormData
 } = require('../lib/monday');
-
+const { BOARD_IDS } = require('../lib/config');
 const { runGraphQLQuery } = require('../lib/graphql');
 
 module.exports = async function handler(req, res) {
@@ -46,46 +47,62 @@ module.exports = async function handler(req, res) {
 
   // Handle new item creation
   if (event.type === 'create_pulse') {
-    // ✅ Only process Web Form board items
-    if (boardId === 8826296878) {
-      const email = event.columnValues?.email_mkpkkkje?.text || '';
-      const name = event.columnValues?.text_mkpkzg16?.value || '';
-      console.log("📧 Extracted Email:", email);
-      console.log("🙋 Extracted Name:", name);
+    // ✅ Process Web Form board items
+    if (boardId === BOARD_IDS.WEB_FORM_INTAKE) {
+      console.log(`📝 Processing new web form submission: ${itemId}`);
+      
+      try {
+        // Extract all data from the web form
+        const formData = await extractWebFormData(itemId);
+        if (!formData) {
+          return res.status(500).json({ 
+            message: 'Failed to extract web form data.' 
+          });
+        }
+        
+        // Try to find a matching contact
+        let contactId = await findMatchingContact(formData.email, formData.clientName);
+        console.log("🔗 Matching Contact ID:", contactId || '(none found)');
 
-      let contactId = await findMatchingContact(email, name);
-      console.log("🔗 Matched Contact ID:", contactId || '(none found)');
+        // Create a new contact if no match found
+        if (!contactId) {
+          contactId = await createContact(
+            formData.clientName, 
+            formData.email, 
+            formData.phone, 
+            formData.company
+          );
+          console.log("✨ Created new Contact ID:", contactId);
+        }
 
-      if (!contactId) {
-        const phone = event.columnValues?.phone_mkpkcdr8?.phone || '';
-        const company = event.columnValues?.text7?.text || '';
-        contactId = await createContact(name, email, phone, company);
-        console.log("✨ Created new Contact ID:", contactId);
+        // Create a new project intake item
+        const projectId = await createProjectIntakeItem(formData, contactId, itemId);
+        console.log("📝 Created Project Intake Item:", projectId);
+        
+        // Link the project back to the contact
+        await linkProjectToContact(contactId, projectId);
+        console.log("🔗 Linked project back to contact.");
+
+        // Mark the web form item as processed
+        await markWebFormItemProcessed(itemId);
+        console.log("✅ Marked Web Form item as processed.");
+        
+        return res.status(200).json({ 
+          message: 'Successfully processed web form submission.',
+          contactId,
+          projectId
+        });
+      } catch (error) {
+        console.error("❌ Error processing web form:", error);
+        return res.status(500).json({ 
+          message: 'Error processing web form submission.',
+          error: error.message
+        });
       }
-
-      const workTypes = event.columnValues?.dropdown_mkpkpc18?.chosenValues?.map(v => v.name) || [];
-      const materials = event.columnValues?.color_mkpk6mvd?.label?.text || '';
-      const deadline = event.columnValues?.date_mkpkmcjn?.date || '';
-      const extraInfo = event.columnValues?.long_text_mkpkz47?.text || '';
-
-      const projectId = await createProjectIntakeItem({
-        name: event.pulseName,
-        workTypes,
-        materials,
-        deadline,
-        extraInfo
-      }, contactId);
-
-      console.log("📝 Created Project Intake Item:", projectId);
-      await linkProjectToContact(contactId, projectId);
-      console.log("🔗 Linked project back to contact.");
-
-      await markWebFormItemProcessed(itemId);
-      console.log("✅ Marked Web Form item as processed.");
     }
 
     // Only run Work Types logic on the Projects board
-    if (boardId === 7108984735) {
+    if (boardId === BOARD_IDS.PROJECTS) {
       const workTypeValues = event.columnValues?.dropdown_mkp8c97w?.chosenValues || [];
       console.log("🆕 Work Types on new item:", workTypeValues.map(v => v.name));
       await createSubitemsAndAssignTeams(itemId, workTypeValues);
@@ -117,7 +134,7 @@ module.exports = async function handler(req, res) {
       await handleShowColumnChange(itemId, showValue.name, fullBoardId, allGroups);
     }
 
-    return res.status(200).json({ message: 'Processed new item with contact, intake, and optional show assignment.' });
+    return res.status(200).json({ message: 'Processed new item creation.' });
   }
 
   // Handle Show column changes
