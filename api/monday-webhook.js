@@ -1,6 +1,12 @@
 // /api/monday-webhook.js
 const { json } = require('micro');
-const { createSubitemsAndAssignTeams, handleShowColumnChange, extractShowNumber, formatJobNumber, getNextJobNumber } = require('../lib/logic');
+const {
+  createSubitemsAndAssignTeams,
+  handleShowColumnChange,
+  extractShowNumber,
+  formatJobNumber,
+  getNextJobNumber
+} = require('../lib/logic');
 const { itemHasJobNumber, setJobNumber, fetchItemsInGroup } = require('../lib/monday');
 const { runGraphQLQuery } = require('../lib/graphql');
 
@@ -30,6 +36,19 @@ module.exports = async function handler(req, res) {
 
   // Handle new item creation
   if (event.type === 'create_pulse') {
+    // ✅ Only run contact matching logic for the Web Form Raw Intake board
+    if (boardId === 8826296878) {
+      const email = event.columnValues?.email_mkpkkkje?.text || '';
+      const name = event.columnValues?.text_mkpkzg16?.text || '';
+      console.log("📧 Extracted Email:", email);
+      console.log("🙋 Extracted Name:", name);
+
+      const { findMatchingContact } = require('../lib/monday');
+      const contactId = await findMatchingContact(email, name);
+      console.log("🔗 Matched Contact ID:", contactId || '(none found)');
+      // TODO: if contactId is null, create one — coming next
+    }
+
     const workTypeValues = event.columnValues?.dropdown_mkp8c97w?.chosenValues || [];
     console.log("🆕 Work Types on new item:", workTypeValues.map(v => v.name));
     await createSubitemsAndAssignTeams(itemId, workTypeValues);
